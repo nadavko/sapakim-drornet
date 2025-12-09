@@ -205,7 +205,7 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # --- חלק 1: הזרקת ה-CSS ---
+        # --- חלק 1: ה-CSS (עיצוב) ---
         st.markdown("""
         <style>
             /* עיצוב טבלה למחשב */
@@ -234,7 +234,7 @@ def show_suppliers_table(df):
                 border: 1px solid #e0e0e0;
                 border-radius: 8px;
                 margin-bottom: 10px;
-                padding: 8px;
+                padding: 10px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.05);
                 direction: rtl;
                 text-align: right;
@@ -245,10 +245,11 @@ def show_suppliers_table(df):
                 list-style: none;
                 margin-bottom: 5px;
                 color: #000;
+                outline: none;
             }
             .mobile-card .card-content {
-                margin-top: 5px;
-                padding-top: 5px;
+                margin-top: 10px;
+                padding-top: 10px;
                 border-top: 1px solid #eee;
                 font-size: 0.9em;
                 color: #333;
@@ -259,7 +260,7 @@ def show_suppliers_table(df):
                 font-weight: bold;
             }
 
-            /* --- הסתרה והצגה לפי גודל מסך --- */
+            /* --- מנגנון רספונסיבי --- */
             .desktop-view { display: block; }
             .mobile-view { display: none; }
 
@@ -270,38 +271,46 @@ def show_suppliers_table(df):
         </style>
         """, unsafe_allow_html=True)
 
-        # --- חלק 2: בניית ה-HTML (ללא רווחים מיותרים!) ---
+        # --- חלק 2: בניית ה-HTML ---
         
         # טבלה למחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # כרטיסיות לנייד
-        cards_html_content = ""
+        # כרטיסיות לנייד - בנייה בצורה בטוחה
+        cards_html_list = []
         for _, row in df.iterrows():
-            # שים לב: הכל בשורה אחת או צמוד לשמאל כדי למנוע זיהוי כ"קוד"
-            cards_html_content += f"""
-<div class="mobile-card">
-<details>
-<summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary>
-<div class="card-content">
-<div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
-<div><strong>כתובת:</strong> {row['כתובת']}</div>
-<div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
-</div>
-</details>
-</div>"""
+            # אנו בונים את הכרטיסייה כשורה אחת ארוכה בלי ירידת שורה כדי למנוע תקלות
+            card = f"""
+            <div class="mobile-card">
+                <details>
+                    <summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary>
+                    <div class="card-content">
+                        <div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
+                        <div><strong>כתובת:</strong> {row['כתובת']}</div>
+                        <div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
+                    </div>
+                </details>
+            </div>
+            """
+            cards_html_list.append(card)
+        
+        # חיבור כל הכרטיסיות למחרוזת אחת
+        all_cards = "".join(cards_html_list)
 
-        # --- חלק 3: הצגה סופית ---
-        # גם כאן, חשוב שה-divים יהיו צמודים לשמאל
+        # --- חלק 3: הרכבה סופית והצגה ---
         final_html = f"""
-<div class="desktop-view">
-{table_html}
-</div>
-<div class="mobile-view">
-{cards_html_content}
-</div>
-"""
-        st.markdown(final_html, unsafe_allow_html=True)
+        <div class="desktop-view">
+            {table_html}
+        </div>
+        <div class="mobile-view">
+            {all_cards}
+        </div>
+        """
+        
+        # התיקון הקריטי: ניקוי שורות חדשות כדי שזה לא ייחשב כקוד
+        final_html_clean = final_html.replace('\n', ' ')
+        
+        st.markdown(final_html_clean, unsafe_allow_html=True)
 
     else:
         st.info("אין נתונים להצגה")
@@ -311,6 +320,7 @@ if not st.session_state.get('logged_in', False):
     login_page()
 else:
     main_app()
+
 
 
 
