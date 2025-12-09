@@ -44,10 +44,10 @@ def check_duplicate_supplier(df, name, phone, email):
 def set_css():
     st.markdown("""
     <style>
-        /* כיוון כללי */
+        /* כיוון כללי - RTL */
         .stApp { direction: rtl; text-align: right; }
         
-        /* הרחבת הקונטיינר הראשי */
+        /* צמצום רווחים */
         .block-container {
             max-width: 100%;
             padding-top: 1rem;
@@ -57,24 +57,33 @@ def set_css():
         }
 
         /* יישור אלמנטים */
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
-        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
-        
-        /* --- תיקון לטבלה של המנהל (Data Editor) --- */
-        [data-testid="stDataEditor"] { direction: rtl !important; }
-        [data-testid="stDataEditor"] div[role="columnheader"] {
-            direction: rtl !important;
-            text-align: right !important;
-            justify-content: flex-start !important; /* מצמיד לימין */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
+            text-align: right !important; 
         }
-        [data-testid="stDataEditor"] div[role="gridcell"] {
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
+            direction: rtl; text-align: right; 
+        }
+        /* טאבים בסדר הפוך */
+        .stTabs [data-baseweb="tab-list"] { 
+            flex-direction: row-reverse; justify-content: flex-end; 
+        }
+        
+        /* --- טבלת מנהל (Data Editor) --- */
+        [data-testid="stDataEditor"] { direction: rtl !important; }
+        /* כותרות */
+        [data-testid="stDataEditor"] div[role="columnheader"] {
+            text-align: right !important;
+            justify-content: flex-start !important; 
             direction: rtl !important;
+        }
+        /* תאים */
+        [data-testid="stDataEditor"] div[role="gridcell"] {
             text-align: right !important;
             justify-content: flex-end !important;
+            direction: rtl !important;
         }
         
-        /* --- טבלת משתמשים (HTML) --- */
+        /* --- טבלת משתמש (HTML) --- */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
@@ -87,16 +96,48 @@ def set_css():
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
-        /* --- מונה משתמשים (Tooltip) --- */
-        .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
-        .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
-        .online-list {
-            visibility: hidden; opacity: 0; position: absolute; bottom: 45px; left: 0;
-            background-color: white; color: #333; min-width: 150px; padding: 10px;
-            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #eee;
-            transition: all 0.2s ease-in-out; text-align: right; font-size: 0.85em;
+        /* --- מונה משתמשים ובועה (Tooltip) --- */
+        .online-container { 
+            position: fixed; 
+            bottom: 15px; 
+            left: 15px; 
+            z-index: 99999; 
+            direction: rtl; 
+            font-family: sans-serif; 
         }
-        .online-container:hover .online-list { visibility: visible; opacity: 1; bottom: 50px; }
+        .online-badge { 
+            background-color: #4CAF50; 
+            color: white; 
+            padding: 8px 15px; 
+            border-radius: 50px; 
+            font-size: 0.9em; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3); 
+            cursor: default; 
+            font-weight: bold; 
+        }
+        .online-list {
+            visibility: hidden; 
+            opacity: 0; 
+            position: absolute; 
+            bottom: 45px; 
+            left: 0;
+            background-color: white; 
+            color: #333; 
+            min-width: 150px; 
+            padding: 10px;
+            border-radius: 8px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+            border: 1px solid #eee;
+            transition: all 0.2s ease-in-out; 
+            text-align: right; 
+            font-size: 0.85em;
+        }
+        /* הצגה במעבר עכבר */
+        .online-container:hover .online-list { 
+            visibility: visible; 
+            opacity: 1; 
+            bottom: 50px; 
+        }
 
         /* רספונסיביות */
         .desktop-view { display: block; }
@@ -190,11 +231,14 @@ def update_settings_list(column_name, new_list):
     sheet = client.open(SHEET_NAME).worksheet("settings")
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
+    
     other_col = 'payment_terms' if column_name == 'fields' else 'fields'
     other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
+    
     max_len = max(len(new_list), len(other_list))
     new_list += [''] * (max_len - len(new_list))
     other_list += [''] * (max_len - len(other_list))
+    
     new_df = pd.DataFrame({column_name: new_list, other_col: other_list})
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
@@ -227,7 +271,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סידור עמודות: שם מימין (ראשון), מחיקה משמאל (אחרון)
+        # סדר העמודות: שם ספק ראשון (ימין ב-RTL) עד לצ'קבוקס מחיקה (אחרון, שמאל)
         cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in cols_order if c in df.columns]
         df_disp = df[final_cols].copy()
@@ -280,7 +324,6 @@ def show_suppliers_table(df, all_fields_list):
         # בניית HTML לטלפון
         cards_html = ""
         for _, row in df.iterrows():
-            # שורה אחת ארוכה למניעת באג תצוגה
             cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
 
         st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html}</div>', unsafe_allow_html=True)
@@ -505,14 +548,12 @@ def main_app():
     cnt, names = get_online_users_count_and_names()
     names_html = "<br>".join(names) if names else "אין"
     
-    # טולטיפ משתמשים
-    tooltip = ""
-    if user_role == 'admin':
-        tooltip = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
+    # טולטיפ משותף לכולם
+    tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
 
     st.markdown(f"""
     <div class="online-container">
-        {tooltip}
+        {tooltip_html}
         <div class="online-badge">🟢 מחוברים: {cnt}</div>
     </div>
     """, unsafe_allow_html=True)
