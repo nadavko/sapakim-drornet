@@ -7,7 +7,7 @@ import time
 import bcrypt
 import re
 
-# --- הגדרת עמוד רחב (חובה בהתחלה) ---
+# --- הגדרת עמוד רחב ---
 st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
 
 # --- הגדרות ---
@@ -65,19 +65,15 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* ---- תיקון אגרסיבי לטבלה של המנהל (st.data_editor) ---- */
-        [data-testid="stDataFrame"], [data-testid="stDataEditor"] {
-            direction: rtl !important;
-        }
-        /* כותרות */
-        [data-testid="stDataFrame"] th, [data-testid="stDataEditor"] th {
+        /* --- טבלה של המנהל (st.data_editor) --- */
+        /* כאן אנחנו רק דואגים שהטקסט בתוך התאים יהיה מימין לשמאל */
+        [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
-            direction: rtl !important;
+            justify-content: flex-end !important;
         }
-        /* תאים */
-        [data-testid="stDataFrame"] td, [data-testid="stDataEditor"] td {
+        [data-testid="stDataEditor"] div[role="gridcell"] {
             text-align: right !important;
-            direction: rtl !important;
+            justify-content: flex-end !important;
         }
         
         /* טבלה רגילה (HTML) למשתמש */
@@ -104,7 +100,6 @@ def set_css():
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
-            /* צמצום שוליים במובייל */
             .block-container { 
                 padding-top: 1rem !important; 
                 padding-left: 0.5rem !important;
@@ -239,29 +234,44 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
     with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
     if not df.empty:
-        # לוגיקת סינון
+        # סינון
         if selected_category != "הכל":
             df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
-        existing_cols = [c for c in desired_cols if c in df.columns]
-        df_display = df[existing_cols].copy()
+        # סדר העמודות המדויק שביקשת
+        desired_cols = [
+            'שם הספק', 
+            'תחום עיסוק', 
+            'טלפון', 
+            'אימייל', 
+            'כתובת', 
+            'שם איש קשר', 
+            'תנאי תשלום', 
+            'נוסף על ידי'
+        ]
         
-        df_display.insert(0, "סמן למחיקה", False)
+        # מסדרים את ה-DataFrame לפי הסדר הזה
+        final_cols = [c for c in desired_cols if c in df.columns]
+        df_display = df[final_cols].copy()
+        
+        # מוסיפים את עמודת המחיקה בסוף
+        df_display["מחיקה?"] = False
 
         st.write("סמן בתיבה את הספקים למחיקה:")
         
+        # תצוגת הטבלה
         edited_df = st.data_editor(
             df_display,
             column_config={
-                "סמן למחיקה": st.column_config.CheckboxColumn(
-                    "מחיקה?",
-                    help="סמן כדי למחוק ספק זה",
+                "מחיקה?": st.column_config.CheckboxColumn(
+                    "מחק",
+                    help="סמן למחיקה",
                     default=False,
                     width="small"
                 ),
+                # נעילת שאר העמודות
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -275,7 +285,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             use_container_width=True
         )
 
-        selected_rows = edited_df[edited_df["סמן למחיקה"] == True]
+        selected_rows = edited_df[edited_df["מחיקה?"] == True]
         
         if not selected_rows.empty:
             st.divider()
@@ -327,10 +337,9 @@ def show_suppliers_table(df, all_fields_list):
     else:
         st.info("אין נתונים להצגה.")
 
-# --- דף כניסה (מרכוז) ---
+# --- דף כניסה ---
 def login_page():
-    # יצירת עמודות כדי למרכז את הטופס (1/3 רוחב משמאל, 1/3 באמצע, 1/3 מימין)
-    # משתמשים בעמודות רק כדי למרכז כי כל העמוד הוא wide
+    # מרכוז הטופס
     _, col_centered, _ = st.columns([1, 1.5, 1])
     
     with col_centered:
