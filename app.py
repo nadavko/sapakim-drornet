@@ -7,8 +7,8 @@ import time
 import bcrypt
 import re
 
-# --- הגדרת עמוד רחב ---
-st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
+# --- הגדרת עמוד רחב (חובה פקודה ראשונה) ---
+st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="collapsed")
 
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -51,104 +51,142 @@ def set_css():
         /* כיוון כללי */
         .stApp { direction: rtl; text-align: right; }
         
-        /* הרחבת הקונטיינר הראשי */
+        /* צמצום שוליים עליונים כדי לנצל מקום */
         .block-container {
-            max-width: 100%;
-            padding-top: 2rem;
-            padding-right: 2rem;
+            padding-top: 1rem;
             padding-left: 2rem;
-            padding-bottom: 2rem;
+            padding-right: 2rem;
+            max-width: 100%;
         }
 
         /* יישור אלמנטים כללי */
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
-        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
+            text-align: right !important; 
+        }
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
+            direction: rtl; text-align: right; 
+        }
+        .stTabs [data-baseweb="tab-list"] { 
+            flex-direction: row-reverse; justify-content: flex-end; 
+        }
         
-        /* טבלה למנהל (st.data_editor) */
+        /* --- תיקון לטבלה של המנהל (st.data_editor) --- */
+        [data-testid="stDataEditor"] {
+            direction: rtl;
+        }
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
-            justify-content: flex-end !important;
+            justify-content: flex-start !important; /* מצמיד לימין */
+            direction: rtl;
         }
         [data-testid="stDataEditor"] div[role="gridcell"] {
             text-align: right !important;
             justify-content: flex-end !important;
+            direction: rtl;
         }
         
-        /* טבלה רגילה (HTML) למשתמש */
-        .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
-        .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
-        .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
+        /* --- עיצוב טבלת HTML למשתמש --- */
+        .rtl-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            direction: rtl; 
+            margin-top: 10px; 
+            font-size: 0.95em;
+        }
+        .rtl-table th { 
+            background-color: #f8f9fa; 
+            text-align: right !important; 
+            padding: 12px; 
+            border-bottom: 2px solid #dee2e6; 
+            color: #333; 
+            font-weight: bold; 
+            white-space: nowrap; 
+        }
+        .rtl-table td { 
+            text-align: right !important; 
+            padding: 10px; 
+            border-bottom: 1px solid #e9ecef; 
+            color: #333; 
+        }
+        /* צבעי זברה לשורות */
+        .rtl-table tr:nth-child(even) {background-color: #fdfdfd;}
+        .rtl-table tr:hover {background-color: #f1f1f1;}
 
-        /* כרטיסיות מובייל */
-        .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right !important; }
-        .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
-        .mobile-card summary::after { content: "+"; font-size: 1.2em; margin-right: 10px; color: #666; }
+        /* --- כרטיסיות מובייל --- */
+        .mobile-card { 
+            background-color: white; 
+            border: 1px solid #e0e0e0; 
+            border-radius: 8px; 
+            margin-bottom: 10px; 
+            padding: 12px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+            direction: rtl; 
+            text-align: right !important; 
+        }
+        .mobile-card summary { 
+            font-weight: bold; 
+            cursor: pointer; 
+            color: #2c3e50; 
+            list-style: none; 
+            outline: none; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .mobile-card summary::after { content: "+"; font-size: 1.2em; color: #7f8c8d; }
         .mobile-card details[open] summary::after { content: "-"; }
-        .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
-        .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
+        .mobile-card .card-content { 
+            margin-top: 10px; 
+            padding-top: 10px; 
+            border-top: 1px solid #eee; 
+            font-size: 0.9em; 
+            color: #34495e; 
+            line-height: 1.6;
+        }
+        .mobile-card a { color: #0066cc; text-decoration: none; font-weight: 500; }
         
-        /* --- עיצוב מחדש למונה המשתמשים (Hover Tooltip) --- */
+        /* --- מונה משתמשים (Tooltip) --- */
         .online-container {
             position: fixed;
             bottom: 15px;
-            left: 15px; /* צד שמאל למטה */
+            left: 15px;
             z-index: 99999;
             font-family: sans-serif;
             direction: rtl;
         }
-        
-        /* הכפתור עצמו */
         .online-badge {
-            background-color: #4CAF50;
+            background-color: #28a745;
             color: white;
             padding: 8px 15px;
             border-radius: 50px;
-            font-size: 0.9em;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            font-size: 0.85em;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             cursor: default;
             font-weight: bold;
-            transition: all 0.3s;
         }
-        
-        /* רשימת המשתמשים (מוסתרת כברירת מחדל) */
         .online-list {
             visibility: hidden;
             opacity: 0;
             position: absolute;
-            bottom: 45px; /* מופיע מעל הכפתור */
+            bottom: 45px;
             left: 0;
             background-color: white;
             color: #333;
-            min-width: 180px;
+            min-width: 150px;
             padding: 10px;
             border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            border: 1px solid #eee;
-            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            border: 1px solid #ddd;
+            transition: opacity 0.2s;
             text-align: right;
             font-size: 0.85em;
         }
-        
-        /* החץ הקטן למטה של הבועה */
-        .online-list::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 20px;
-            border-width: 6px;
-            border-style: solid;
-            border-color: white transparent transparent transparent;
-        }
-
-        /* טריגר: כשעוברים עם העכבר על הקונטיינר, הרשימה מופיעה */
         .online-container:hover .online-list {
             visibility: visible;
             opacity: 1;
-            bottom: 55px; /* אפקט ציפה קטן למעלה */
         }
 
-        /* הגדרות רספונסיביות */
+        /* --- רספונסיביות --- */
         .desktop-view { display: block; }
         .mobile-view { display: none; }
         
@@ -156,11 +194,7 @@ def set_css():
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
-            .block-container { 
-                padding-top: 1rem !important; 
-                padding-left: 0.5rem !important;
-                padding-right: 0.5rem !important;
-            }
+            .block-container { padding: 1rem !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -216,7 +250,7 @@ def get_online_users_count_and_names():
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס ---
+# --- פעולות בסיס בגיליון ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -257,78 +291,50 @@ def update_settings_list(column_name, new_list):
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
 
-# --- מחיקה מרובה עם אישור ---
-@st.dialog("אישור מחיקה מרובה")
+# --- מחיקה מרובה ---
+@st.dialog("אישור מחיקה")
 def confirm_bulk_delete(suppliers_to_delete):
-    st.write(f"אתה עומד למחוק **{len(suppliers_to_delete)}** ספקים מהמערכת.")
-    st.write("הפעולה היא בלתי הפיכה. האם להמשיך?")
-    
+    st.write(f"האם למחוק **{len(suppliers_to_delete)}** ספקים?")
     col1, col2 = st.columns(2)
-    if col1.button("כן, מחק את המסומנים", type="primary"):
-        progress_bar = st.progress(0)
-        deleted_count = 0
-        
-        for i, supplier_name in enumerate(suppliers_to_delete):
-            if delete_row_from_sheet("suppliers", "שם הספק", supplier_name):
-                deleted_count += 1
-            progress_bar.progress((i + 1) / len(suppliers_to_delete))
-            
-        if deleted_count > 0:
-            st.success(f"{deleted_count} ספקים נמחקו בהצלחה!")
+    if col1.button("כן, מחק", type="primary"):
+        prog = st.progress(0)
+        cnt = 0
+        for i, name in enumerate(suppliers_to_delete):
+            if delete_row_from_sheet("suppliers", "שם הספק", name): cnt += 1
+            prog.progress((i + 1) / len(suppliers_to_delete))
+        if cnt > 0:
+            st.success(f"{cnt} נמחקו!")
             time.sleep(1)
             st.rerun()
-        else:
-            st.error("לא הצלחנו למחוק. ייתכן שהם כבר נמחקו.")
-            
-    if col2.button("ביטול"):
-        st.rerun()
+        else: st.error("שגיאה")
+    if col2.button("ביטול"): st.rerun()
 
-# --- תצוגת טבלה למנהל (עם צ'קבוקסים) ---
+# --- תצוגת טבלה למנהל ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
     with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
     if not df.empty:
-        # סינון
         if selected_category != "הכל":
             df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר העמודות המדויק שביקשת
-        desired_cols = [
-            'שם הספק', 
-            'תחום עיסוק', 
-            'טלפון', 
-            'אימייל', 
-            'כתובת', 
-            'שם איש קשר', 
-            'תנאי תשלום', 
-            'נוסף על ידי'
-        ]
-        
+        # סדר העמודות המבוקש (שם ראשון, מחיקה אחרון)
+        desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in desired_cols if c in df.columns]
         df_display = df[final_cols].copy()
         
-        # בנייה בסדר הפוך כדי שהטבלה תסתדר ויזואלית מימין לשמאל
-        reversed_cols = final_cols[::-1]
-        df_display = df_display[reversed_cols]
-        
-        # מחיקה ראשונה משמאל (שזה בסוף הימין)
-        df_display.insert(0, "מחיקה?", False)
+        # הוספת צ'קבוקס בסוף (ב-RTL סוף זה שמאל)
+        df_display["מחיקה?"] = False
 
-        st.write("סמן בתיבה את הספקים למחיקה:")
+        st.write("סמן למחיקה:")
         
         edited_df = st.data_editor(
             df_display,
             column_config={
-                "מחיקה?": st.column_config.CheckboxColumn(
-                    "מחק",
-                    help="סמן כדי למחוק ספק זה",
-                    default=False,
-                    width="small"
-                ),
+                "מחיקה?": st.column_config.CheckboxColumn("מחק", width="small", default=False),
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -343,17 +349,14 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         )
 
         selected_rows = edited_df[edited_df["מחיקה?"] == True]
-        
         if not selected_rows.empty:
-            st.divider()
-            st.warning(f"נבחרו {len(selected_rows)} ספקים למחיקה.")
-            if st.button("🗑️ לחץ כאן למחיקת הספקים המסומנים", type="primary"):
+            st.warning(f"נבחרו {len(selected_rows)} למחיקה.")
+            if st.button("🗑️ מחק מסומנים", type="primary"):
                 confirm_bulk_delete(selected_rows["שם הספק"].tolist())
-
     else:
         st.info("אין נתונים.")
 
-# --- תצוגת טבלה למשתמש רגיל ---
+# --- תצוגת טבלה למשתמש (HTML מתוקן!) ---
 def show_suppliers_table(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -365,44 +368,31 @@ def show_suppliers_table(df, all_fields_list):
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
-        final_cols = [c for c in desired_cols if c in df.columns]
+        cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
+        df_final = df[[c for c in cols if c in df.columns]]
         
-        # HTML מחשב
-        table_html = df[final_cols].to_html(index=False, classes='rtl-table', border=0, escape=False)
+        # HTML מחשב - ללא רווחים מיותרים כדי למנוע באג תצוגה
+        table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False)
+        table_html = table_html.replace('\n', '') 
         
         # HTML טלפון
-        cards = []
+        cards_html = ""
         for _, row in df.iterrows():
-            card = f"""
-            <div class="mobile-card">
-                <details>
-                    <summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary>
-                    <div class="card-content">
-                        <div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
-                        <div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div>
-                        <div><strong>📍:</strong> {row['כתובת']}</div>
-                        <div><strong>👤:</strong> {row.get('שם איש קשר','')}</div>
-                        <div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div>
-                        <div style="font-size: 0.8em; color: #888; margin-top:5px;">נוסף ע"י: {row.get('נוסף על ידי','')}</div>
-                    </div>
-                </details>
-            </div>"""
-            cards.append(card)
-        
-        st.markdown(f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{"".join(cards)}</div>""", unsafe_allow_html=True)
-    else:
-        st.info("אין נתונים להצגה.")
+            # בניית הכרטיס כמחרוזת אחת ארוכה
+            cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
 
-# --- דף כניסה (מרכוז) ---
+        # הזרקה נקייה
+        st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html}</div>', unsafe_allow_html=True)
+    else:
+        st.info("אין נתונים.")
+
+# --- דף כניסה ---
 def login_page():
-    c1, c2, c3 = st.columns([1, 1.5, 1])
-    
+    c1, c2, c3 = st.columns([1, 1.5, 1]) # מרכוז
     with c2:
         st.title("🔐 כניסה למערכת")
-        
-        with st.expander("כלי למנהל: יצירת סיסמה"):
-            p = st.text_input("סיסמה להצפנה")
+        with st.expander("כלי למנהל (הצפנה)"):
+            p = st.text_input("סיסמה")
             if st.button("הצפן"): st.code(hash_password(p))
 
         t1, t2 = st.tabs(["התחברות", "הרשמה"])
@@ -422,7 +412,7 @@ def login_page():
                             st.session_state['name'] = rec.iloc[0]['name']
                             st.session_state['role'] = rec.iloc[0]['role']
                             update_active_user(user)
-                            st.success("מתחבר...")
+                            st.success("מחובר!")
                             time.sleep(0.5)
                             st.rerun()
                         else: st.error("פרטים שגויים")
@@ -441,10 +431,10 @@ def login_page():
                         exists = False
                         if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists = True
                         if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists = True
-                        if exists: st.error("קיים משתמש כזה")
+                        if exists: st.error("קיים במערכת")
                         else:
                             add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
-                            st.success("בקשה נשלחה")
+                            st.success("נשלח לאישור")
 
 # --- ראשי ---
 def main_app():
@@ -458,7 +448,7 @@ def main_app():
 
     c1, c2, c3 = st.columns([6, 2, 1])
     c1.title(f"שלום, {user_name}")
-    if c2.button("🔄 רענן"):
+    if c2.button("🔄"):
         st.cache_data.clear()
         st.rerun()
     if c3.button("יציאה"):
@@ -469,14 +459,12 @@ def main_app():
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
         my_rejections = pd.DataFrame() 
         if not df_rejected.empty:
-            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rejected['נוסף על ידי'].astype(str).str.contains(current_user_email, na=False)
+            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False)
             my_rejections = df_rejected[mask]
-        
         if not my_rejections.empty:
-            st.error(f"יש לך {len(my_rejections)} ספקים שנדחו.")
+            st.error(f"יש {len(my_rejections)} ספקים שנדחו.")
             st.dataframe(my_rejections[['שם הספק', 'תאריך דחייה']], use_container_width=True)
-        else:
-            st.info("אין הודעות דחייה.")
+        else: st.info("אין הודעות")
 
     st.markdown("---")
 
@@ -486,10 +474,9 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        tabs = st.tabs(["📋 ספקים", f"⏳ ספקים ({c_supp})", f"👥 משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        with tabs[0]:
-            show_admin_table_with_checkboxes(df_suppliers, fields_list)
+        with tabs[0]: show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
         with tabs[1]:
             if c_supp > 0:
@@ -555,7 +542,6 @@ def main_app():
             st.subheader("ניהול רשימות")
             c_fields, c_terms = st.columns(2)
             with c_fields:
-                st.write("**תחומי עיסוק**")
                 new_field = st.text_input("הוסף תחום")
                 if st.button("הוסף", key="add_f"):
                     if new_field and new_field not in fields_list:
@@ -568,9 +554,7 @@ def main_app():
                         fields_list.remove(rem_field)
                         update_settings_list("fields", fields_list)
                         st.rerun()
-
             with c_terms:
-                st.write("**תנאי תשלום**")
                 new_term = st.text_input("הוסף תנאי")
                 if st.button("הוסף", key="add_t"):
                     if new_term and new_term not in payment_list:
@@ -619,22 +603,17 @@ def main_app():
                     else: st.error("חסרים פרטים")
 
     count_online, names_online = get_online_users_count_and_names()
-    
-    # הצגת המונה עם הבועה (Tooltip)
     names_html = "<br>".join(names_online) if names_online else "אין אחרים"
     
-    # רק מנהל רואה את הרשימה בתוך ה-HTML
+    # Tooltip למנהל בלבד
+    tooltip_html = ""
     if user_role == 'admin':
         tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
-    else:
-        tooltip_html = '' # משתמש רגיל לא מקבל את ה-DIV הזה בכלל
 
     st.markdown(f"""
     <div class="online-container">
         {tooltip_html}
-        <div class="online-badge">
-            🟢 מחוברים כעת: {count_online}
-        </div>
+        <div class="online-badge">🟢 מחוברים: {count_online}</div>
     </div>
     """, unsafe_allow_html=True)
 
