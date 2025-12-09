@@ -5,12 +5,13 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import time
 import bcrypt
+import re  # ספרייה לביטויים רגולריים (בדיקת אימייל)
 
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SHEET_NAME = "ניהול ספקים"
 
-# --- פונקציות עזר להצפנה ---
+# --- פונקציות עזר וולידציה (בדיקות תקינות) ---
 def hash_password(password):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     return hashed.decode('utf-8')
@@ -21,17 +22,62 @@ def check_password(plain_text_password, hashed_password):
     except ValueError:
         return False
 
+def is_valid_email(email):
+    """בדיקת תקינות תחביר אימייל"""
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return re.match(pattern, email) is not None
+
+def check_duplicate_supplier(df, name, phone, email):
+    """
+    בודק אם קיים ספק עם נתונים זהים.
+    מחזיר: (True, הודעת שגיאה) אם יש כפילות, אחרת (False, "")
+    """
+    if df.empty:
+        return False, ""
+    
+    # המרה לטקסט וניקוי רווחים להשוואה הוגנת
+    name = str(name).strip()
+    phone = str(phone).strip()
+    email = str(email).strip().lower()
+    
+    # בדיקת שם
+    if name in df['שם הספק'].astype(str).str.strip().values:
+        return True, f"שגיאה: ספק בשם '{name}' כבר קיים במערכת."
+    
+    # בדיקת טלפון
+    if phone in df['טלפון'].astype(str).str.strip().values:
+        return True, f"שגיאה: מספר הטלפון '{phone}' כבר קיים במערכת."
+        
+    # בדיקת אימייל
+    if email and email in df['אימייל'].astype(str).str.strip().str.lower().values:
+        return True, f"שגיאה: כתובת האימייל '{email}' כבר קיימת במערכת."
+        
+    return False, ""
+
 # --- פונקציית עיצוב (CSS) ---
 def set_css():
     st.markdown("""
     <style>
         .stApp { direction: rtl; text-align: right; }
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
+        
+        /* יישור כללי לימין */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
+            text-align: right !important; 
+        }
+        
+        /* תיקון לשדות קלט */
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
+            direction: rtl; text-align: right; 
+        }
+        
+        /* תיקון לטאבים (Tabs) שיהיו מימין לשמאל */
+        .stTabs [data-baseweb="tab-list"] {
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+        }
+        
         .stRadio, .stCheckbox { direction: rtl; text-align: right; }
         .stRadio > div { flex-direction: row-reverse; justify-content: flex-end; }
-        
-        /* תגיות בבחירה מרובה */
         .stMultiSelect span { direction: rtl; }
 
         /* הגדרות מחשב */
@@ -57,10 +103,11 @@ def set_css():
         @media only screen and (max-width: 768px) {
             .desktop-view { display: none; }
             .mobile-view { display: block; }
+            /* העלמת תפריט צד בטלפון */
             [data-testid="stSidebar"] { display: none !important; }
             [data-testid="stSidebarCollapsedControl"] { display: none !important; }
             [data-testid="stSidebarResizeHandle"] { display: none !important; }
-            .block-container { padding-top: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important; }
+            .block-container { padding-top: 1rem !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -81,39 +128,29 @@ def get_worksheet_data(worksheet_name):
     except Exception:
         return pd.DataFrame(), None
 
-# --- פונקציות לניהול הגדרות (רשימות) ---
+# --- פונקציות לניהול הגדרות ---
 def get_settings_lists():
-    """טוען את רשימות התחומים ותנאי התשלום מהלשונית settings"""
     df, _ = get_worksheet_data("settings")
     if df.empty:
         return [], []
-    
-    # סינון ערכים ריקים וניקוי
     fields = [x for x in df['fields'].tolist() if x]
     payment_terms = [x for x in df['payment_terms'].tolist() if x]
     return fields, payment_terms
 
 def update_settings_list(column_name, new_list):
-    """מעדכן את העמודה המלאה בגיליון ההגדרות"""
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet("settings")
-    
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     
     other_col = 'payment_terms' if column_name == 'fields' else 'fields'
     other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
     
-    # איזון אורכים
     max_len = max(len(new_list), len(other_list))
     new_list += [''] * (max_len - len(new_list))
     other_list += [''] * (max_len - len(other_list))
     
-    new_df = pd.DataFrame({
-        column_name: new_list,
-        other_col: other_list
-    })
-    
+    new_df = pd.DataFrame({column_name: new_list, other_col: other_list})
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
 
@@ -129,14 +166,12 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
     data = sheet.get_all_records()
     for i, row in enumerate(data):
         if str(row[key_col]) == str(key_val):
-            # --- התיקון נמצא כאן: delete_rows במקום delete_row ---
             sheet.delete_rows(i + 2)
             return True
     return False
 
 # --- תצוגת טבלה ---
 def show_suppliers_table(df):
-    st.subheader("רשימת ספקים")
     search = st.text_input("חיפוש חופשי...", "")
     
     if not df.empty:
@@ -146,13 +181,10 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # HTML מחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # HTML טלפון
         cards = []
         for _, row in df.iterrows():
-            # טיפול בערכים ריקים שאולי יגרמו לשגיאה
             contact_name = row.get('שם איש קשר', '')
             email = row.get('אימייל', '')
             
@@ -219,154 +251,226 @@ def login_page():
             new_pass = st.text_input("סיסמה", type="password")
             full_name = st.text_input("שם מלא")
             if st.form_submit_button("הירשם"):
-                df_users, _ = get_worksheet_data("users")
-                existing = []
-                if not df_users.empty:
-                     existing = df_users['username'].astype(str).str.lower().str.strip().values
-                if new_email in existing:
-                    st.warning("קיים במערכת")
+                if not is_valid_email(new_email):
+                    st.error("כתובת אימייל לא תקינה")
                 else:
-                    hashed_pw = hash_password(new_pass)
-                    add_row_to_sheet("pending_users", [new_email, hashed_pw, full_name, str(datetime.now())])
-                    st.success("הבקשה נשלחה לאישור.")
+                    df_users, _ = get_worksheet_data("users")
+                    existing = []
+                    if not df_users.empty:
+                         existing = df_users['username'].astype(str).str.lower().str.strip().values
+                    if new_email in existing:
+                        st.warning("קיים במערכת")
+                    else:
+                        hashed_pw = hash_password(new_pass)
+                        add_row_to_sheet("pending_users", [new_email, hashed_pw, full_name, str(datetime.now())])
+                        st.success("הבקשה נשלחה לאישור.")
 
 # --- אפליקציה ראשית ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
     
-    # טעינת רשימות מהגדרות
+    # טעינת נתונים ראשונית לשימוש בטפסים
     fields_list, payment_list = get_settings_lists()
+    df_suppliers, _ = get_worksheet_data("suppliers")
 
-    st.sidebar.markdown(f"### שלום {user_name}")
-    if st.sidebar.button("יציאה מהמערכת"):
-        st.session_state['logged_in'] = False
-        st.rerun()
-        
-    st.sidebar.markdown("---")
-    
-    # --- הוספת ספק (עם שדות חדשים ווולידציה) ---
-    st.sidebar.subheader("➕ הוספת ספק")
-    with st.sidebar.form("add_supplier_sidebar"):
-        s_name = st.text_input("שם הספק *")
-        s_fields = st.multiselect("תחומי עיסוק *", fields_list)
-        s_phone = st.text_input("טלפון *")
-        s_email = st.text_input("אימייל *")
-        s_contact = st.text_input("שם איש קשר (אופציונלי)")
-        s_addr = st.text_input("כתובת *")
-        s_pay = st.selectbox("תנאי תשלום *", payment_list)
-        
-        if st.form_submit_button("הוסף"):
-            if s_name and s_fields and s_phone and s_email and s_addr and s_pay:
-                fields_str = ", ".join(s_fields)
-                row_data = [s_name, fields_str, s_phone, s_addr, s_pay, s_email, s_contact, user_name]
-                
-                if user_role == 'admin':
-                    add_row_to_sheet("suppliers", row_data)
-                    st.sidebar.success("נוסף בהצלחה!")
-                else:
-                    row_data.append(str(datetime.now()))
-                    add_row_to_sheet("pending_suppliers", row_data)
-                    st.sidebar.success("נשלח לאישור מנהל")
-            else:
-                st.sidebar.error("נא למלא את כל שדות החובה (*)")
+    # --- כותרת וכפתור יציאה ---
+    col_header, col_exit = st.columns([4, 1])
+    with col_header:
+        st.title(f"שלום, {user_name}")
+    with col_exit:
+        if st.button("יציאה", key="logout_btn"):
+            st.session_state['logged_in'] = False
+            st.rerun()
 
-    # --- כלי ניהול (Admin Only) ---
+    st.markdown("---")
+
+    # --- מבנה למנהל: טאבים ראשיים ---
     if user_role == 'admin':
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("🛠️ ניהול מנהל")
-        admin_mode = st.sidebar.radio("בחר כלי:", ["אישור משתמשים", "אישור ספקים", "ניהול רשימות", "מחיקת ספק", "יבוא אקסל"])
+        tabs = st.tabs(["📋 רשימת ספקים", "⏳ אישור ספקים", "👥 אישור משתמשים", "➕ הוספת ספק", "⚙️ הגדרות", "📥 יבוא אקסל", "🗑️ מחיקה"])
         
-        if admin_mode == "אישור משתמשים":
-            df_pending, _ = get_worksheet_data("pending_users")
-            if not df_pending.empty:
-                for idx, row in df_pending.iterrows():
-                    st.sidebar.text(f"{row['name']}")
-                    if st.sidebar.button("אשר", key=f"u_ok_{idx}"):
-                        add_row_to_sheet("users", [row['username'], row['password'], 'user', row['name']])
-                        delete_row_from_sheet("pending_users", "username", row['username'])
-                        st.rerun()
-            else:
-                st.sidebar.text("אין בקשות")
+        # 1. רשימת ספקים
+        with tabs[0]:
+            show_suppliers_table(df_suppliers)
 
-        elif admin_mode == "אישור ספקים":
+        # 2. אישור ספקים ממתינים
+        with tabs[1]:
+            st.subheader("ספקים שממתינים לאישור")
             df_pend_supp, _ = get_worksheet_data("pending_suppliers")
             if not df_pend_supp.empty:
                 for idx, row in df_pend_supp.iterrows():
-                    with st.sidebar.expander(f"{row['שם הספק']}"):
+                    with st.expander(f"{row['שם הספק']} (נוסף ע\"י {row.get('נוסף על ידי', 'Unknown')})"):
                         st.write(f"תחום: {row['תחום עיסוק']}")
-                        st.write(f"איש קשר: {row.get('שם איש קשר', '')}")
-                        if st.button("אשר", key=f"s_ok_{idx}"):
+                        st.write(f"איש קשר: {row.get('שם איש קשר', '')} | טלפון: {row['טלפון']}")
+                        
+                        # בדיקת כפילות לפני אישור
+                        is_dup, err_msg = check_duplicate_supplier(df_suppliers, row['שם הספק'], row['טלפון'], row.get('אימייל', ''))
+                        if is_dup:
+                            st.warning(f"שים לב: {err_msg}")
+
+                        c1, c2 = st.columns(2)
+                        if c1.button("אשר ספק", key=f"adm_app_{idx}"):
                             add_row_to_sheet("suppliers", [
                                 row['שם הספק'], row['תחום עיסוק'], row['טלפון'], 
                                 row['כתובת'], row['תנאי תשלום'], row.get('אימייל', ''), 
                                 row.get('שם איש קשר', ''), row['נוסף על ידי']
                             ])
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
+                            st.success("אושר!")
+                            time.sleep(1)
                             st.rerun()
-                        if st.button("דחה", key=f"s_no_{idx}"):
+                        if c2.button("דחה", key=f"adm_rej_{idx}"):
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
                             st.rerun()
             else:
-                st.sidebar.text("אין ספקים לאישור")
-        
-        elif admin_mode == "ניהול רשימות":
-            st.sidebar.write("**עריכת רשימות בחירה**")
-            with st.sidebar.expander("תחומי עיסוק"):
-                new_field = st.text_input("הוסף תחום חדש")
-                if st.button("הוסף תחום"):
+                st.info("אין ספקים ממתינים לאישור.")
+
+        # 3. אישור משתמשים
+        with tabs[2]:
+            st.subheader("משתמשים שממתינים לאישור")
+            df_pending_users, _ = get_worksheet_data("pending_users")
+            if not df_pending_users.empty:
+                for idx, row in df_pending_users.iterrows():
+                    st.info(f"בקשה מ: {row['name']} ({row['username']})")
+                    c1, c2 = st.columns(2)
+                    if c1.button("אשר", key=f"usr_ok_{idx}"):
+                        add_row_to_sheet("users", [row['username'], row['password'], 'user', row['name']])
+                        delete_row_from_sheet("pending_users", "username", row['username'])
+                        st.success("משתמש אושר!")
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.info("אין משתמשים חדשים.")
+
+        # 4. הוספת ספק (טאב למנהל)
+        with tabs[3]:
+            st.subheader("הוספת ספק חדש")
+            with st.form("admin_add_form"):
+                s_name = st.text_input("שם הספק *")
+                s_fields = st.multiselect("תחומי עיסוק *", fields_list)
+                s_phone = st.text_input("טלפון *")
+                s_email = st.text_input("אימייל *")
+                s_contact = st.text_input("שם איש קשר (אופציונלי)")
+                s_addr = st.text_input("כתובת *")
+                s_pay = st.selectbox("תנאי תשלום *", payment_list)
+                
+                if st.form_submit_button("שמור ספק"):
+                    if s_name and s_fields and s_phone and s_email and s_addr and s_pay:
+                        if not is_valid_email(s_email):
+                            st.error("❌ כתובת אימייל לא תקינה")
+                        else:
+                            # בדיקת כפילות
+                            is_dup, msg = check_duplicate_supplier(df_suppliers, s_name, s_phone, s_email)
+                            if is_dup:
+                                st.error(f"❌ {msg}")
+                            else:
+                                fields_str = ", ".join(s_fields)
+                                row_data = [s_name, fields_str, s_phone, s_addr, s_pay, s_email, s_contact, user_name]
+                                add_row_to_sheet("suppliers", row_data)
+                                st.success("✅ הספק נוסף בהצלחה!")
+                                time.sleep(1)
+                                st.rerun()
+                    else:
+                        st.error("נא למלא את כל שדות החובה")
+
+        # 5. הגדרות (ניהול רשימות)
+        with tabs[4]:
+            st.subheader("ניהול רשימות בחירה")
+            c_fields, c_terms = st.columns(2)
+            
+            with c_fields:
+                st.write("**תחומי עיסוק**")
+                new_field = st.text_input("הוסף תחום")
+                if st.button("הוסף", key="add_f"):
                     if new_field and new_field not in fields_list:
                         fields_list.append(new_field)
                         update_settings_list("fields", fields_list)
                         st.rerun()
-                field_to_remove = st.selectbox("מחק תחום קיים", [""] + fields_list)
-                if st.button("מחק תחום"):
-                    if field_to_remove:
-                        fields_list.remove(field_to_remove)
+                
+                rem_field = st.selectbox("מחק תחום", [""] + fields_list, key="sel_rem_f")
+                if st.button("מחק", key="btn_rem_f"):
+                    if rem_field:
+                        fields_list.remove(rem_field)
                         update_settings_list("fields", fields_list)
                         st.rerun()
 
-            with st.sidebar.expander("תנאי תשלום"):
-                new_term = st.text_input("הוסף תנאי תשלום")
-                if st.button("הוסף תנאי"):
+            with c_terms:
+                st.write("**תנאי תשלום**")
+                new_term = st.text_input("הוסף תנאי")
+                if st.button("הוסף", key="add_t"):
                     if new_term and new_term not in payment_list:
                         payment_list.append(new_term)
                         update_settings_list("payment_terms", payment_list)
                         st.rerun()
-                term_to_remove = st.selectbox("מחק תנאי קיים", [""] + payment_list)
-                if st.button("מחק תנאי"):
-                    if term_to_remove:
-                        payment_list.remove(term_to_remove)
+                
+                rem_term = st.selectbox("מחק תנאי", [""] + payment_list, key="sel_rem_t")
+                if st.button("מחק", key="btn_rem_t"):
+                    if rem_term:
+                        payment_list.remove(rem_term)
                         update_settings_list("payment_terms", payment_list)
                         st.rerun()
 
-        elif admin_mode == "יבוא אקסל":
-             uploaded = st.sidebar.file_uploader("קובץ Excel")
-             if uploaded and st.sidebar.button("טען"):
-                 try:
-                     d = pd.read_excel(uploaded).astype(str)
-                     client = get_client()
-                     sheet = client.open(SHEET_NAME).worksheet("suppliers")
-                     sheet.append_rows(d.values.tolist())
-                     st.sidebar.success("נטען!")
-                 except Exception as e:
-                     st.sidebar.error("שגיאה בקובץ")
+        # 6. יבוא אקסל
+        with tabs[5]:
+            st.subheader("יבוא נתונים")
+            uploaded = st.file_uploader("קובץ Excel", type=["xlsx"])
+            if uploaded and st.button("טען קובץ"):
+                try:
+                    d = pd.read_excel(uploaded).astype(str)
+                    client = get_client()
+                    sheet = client.open(SHEET_NAME).worksheet("suppliers")
+                    sheet.append_rows(d.values.tolist())
+                    st.success("הנתונים נטענו בהצלחה!")
+                except Exception as e:
+                    st.error("שגיאה בטעינת הקובץ")
 
-        elif admin_mode == "מחיקת ספק":
-             del_name = st.sidebar.text_input("הכנס שם ספק מדויק למחיקה")
-             if st.sidebar.button("מחק ספק"):
-                 if delete_row_from_sheet("suppliers", "שם הספק", del_name):
-                     st.sidebar.success("נמחק")
-                     time.sleep(1)
-                     st.rerun()
-                 else:
-                     st.sidebar.error("לא נמצא")
+        # 7. מחיקת ספק
+        with tabs[6]:
+            st.subheader("מחיקת ספק")
+            del_name = st.text_input("הכנס שם ספק מדויק למחיקה")
+            if st.button("מחק לצמיתות"):
+                if delete_row_from_sheet("suppliers", "שם הספק", del_name):
+                    st.success("הספק נמחק.")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("ספק לא נמצא.")
 
-    # --- תצוגה ראשית ---
-    st.title("📦 ניהול ספקים")
-    
-    df_suppliers, _ = get_worksheet_data("suppliers")
-    show_suppliers_table(df_suppliers)
+    # --- מבנה למשתמש רגיל ---
+    else:
+        # למשתמש רגיל: טאבים של צפייה והוספה
+        tabs_user = st.tabs(["🔎 רשימת ספקים", "➕ הצעת ספק חדש"])
+        
+        with tabs_user[0]:
+            show_suppliers_table(df_suppliers)
+            
+        with tabs_user[1]:
+            st.subheader("טופס הצעת ספק")
+            with st.form("user_add_form"):
+                s_name = st.text_input("שם הספק *")
+                s_fields = st.multiselect("תחומי עיסוק *", fields_list)
+                s_phone = st.text_input("טלפון *")
+                s_email = st.text_input("אימייל *")
+                s_contact = st.text_input("שם איש קשר (אופציונלי)")
+                s_addr = st.text_input("כתובת *")
+                s_pay = st.selectbox("תנאי תשלום *", payment_list)
+                
+                if st.form_submit_button("שלח לאישור"):
+                    if s_name and s_fields and s_phone and s_email and s_addr and s_pay:
+                        if not is_valid_email(s_email):
+                            st.error("❌ אימייל לא תקין")
+                        else:
+                            # בדיקת כפילות מול המאגר הקיים
+                            is_dup, msg = check_duplicate_supplier(df_suppliers, s_name, s_phone, s_email)
+                            if is_dup:
+                                st.error(f"❌ {msg}")
+                            else:
+                                fields_str = ", ".join(s_fields)
+                                row_data = [s_name, fields_str, s_phone, s_addr, s_pay, s_email, s_contact, user_name, str(datetime.now())]
+                                add_row_to_sheet("pending_suppliers", row_data)
+                                st.success("✅ הבקשה נשלחה לאישור מנהל")
+                    else:
+                        st.error("נא למלא את כל שדות החובה")
 
 # --- הרצה ---
 set_css()
