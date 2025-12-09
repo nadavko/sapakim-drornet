@@ -26,15 +26,41 @@ def check_password(plain_text_password, hashed_password):
 
 # --- עיצוב לימין (RTL) ---
 def set_rtl_css():
+def set_rtl_css():
     st.markdown("""
     <style>
-        .stApp { direction: rtl; text-align: right; }
-        h1, h2, h3, h4, h5, h6, .stMarkdown, .stButton, .stTextInput, .stSelectbox { text-align: right !important; }
-        [data-testid="stSidebar"] { text-align: right; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox { direction: rtl; text-align: right; }
+        /* במקום להפוך את כל האפליקציה, נהפוך רק את התוכן */
+        
+        /* יישור כותרות וטקסטים */
+        h1, h2, h3, h4, h5, h6, p, .stMarkdown {
+            text-align: right !important;
+            direction: rtl;
+        }
+        
+        /* יישור תיבות קלט (input) */
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* יישור התפריט הצידי */
+        [data-testid="stSidebar"] {
+            text-align: right;
+            direction: rtl;
+        }
+        
+        /* תיקון ספציפי לכפתורי רדיו וצ'קבוקס שיהיו מימין לשמאל */
+        .stRadio, .stCheckbox {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* הסתרת כפתור "ניהול" מעל הטבלה כדי שלא יפריע */
+        .stButton button {
+            width: 100%;
+        }
     </style>
     """, unsafe_allow_html=True)
-
 # --- חיבור לגוגל ---
 def get_client():
     creds_dict = dict(st.secrets["gcp_service_account"])
@@ -205,10 +231,10 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # --- חלק 1: ה-CSS (עיצוב) ---
+        # --- חלק 1: עיצוב CSS ---
         st.markdown("""
         <style>
-            /* עיצוב טבלה למחשב */
+            /* טבלה למחשב */
             .rtl-table {
                 width: 100%;
                 border-collapse: collapse;
@@ -219,39 +245,48 @@ def show_suppliers_table(df):
                 text-align: right;
                 padding: 10px;
                 border-bottom: 2px solid #ddd;
-                color: #000;
+                color: #333;
             }
             .rtl-table td {
                 text-align: right;
                 padding: 10px;
                 border-bottom: 1px solid #eee;
-                color: #000;
+                color: #333;
             }
             
-            /* עיצוב כרטיסיות לנייד */
+            /* כרטיסיות לנייד */
             .mobile-card {
                 background-color: white;
-                border: 1px solid #e0e0e0;
+                border: 1px solid #ddd;
                 border-radius: 8px;
-                margin-bottom: 10px;
+                margin-bottom: 12px;
                 padding: 10px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
                 direction: rtl;
                 text-align: right;
             }
             .mobile-card summary {
                 font-weight: bold;
                 cursor: pointer;
-                list-style: none;
-                margin-bottom: 5px;
                 color: #000;
+                list-style: none; /* הסתרת המשולש בחלק מהדפדפנים */
                 outline: none;
             }
+            /* טריק להוספת פלוס/מינוס לכרטיסייה */
+            .mobile-card summary::after {
+                content: "+"; 
+                float: left; 
+                font-weight: bold;
+            }
+            .mobile-card details[open] summary::after {
+                content: "-";
+            }
+            
             .mobile-card .card-content {
                 margin-top: 10px;
                 padding-top: 10px;
                 border-top: 1px solid #eee;
-                font-size: 0.9em;
+                font-size: 0.95em;
                 color: #333;
             }
             .mobile-card a {
@@ -260,7 +295,7 @@ def show_suppliers_table(df):
                 font-weight: bold;
             }
 
-            /* --- מנגנון רספונסיבי --- */
+            /* הגדרות תצוגה (רספונסיביות) */
             .desktop-view { display: block; }
             .mobile-view { display: none; }
 
@@ -271,46 +306,28 @@ def show_suppliers_table(df):
         </style>
         """, unsafe_allow_html=True)
 
-        # --- חלק 2: בניית ה-HTML ---
+        # --- חלק 2: יצירת ה-HTML ---
         
         # טבלה למחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # כרטיסיות לנייד - בנייה בצורה בטוחה
-        cards_html_list = []
+        # כרטיסיות לנייד
+        cards = []
         for _, row in df.iterrows():
-            # אנו בונים את הכרטיסייה כשורה אחת ארוכה בלי ירידת שורה כדי למנוע תקלות
-            card = f"""
-            <div class="mobile-card">
-                <details>
-                    <summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary>
-                    <div class="card-content">
-                        <div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
-                        <div><strong>כתובת:</strong> {row['כתובת']}</div>
-                        <div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
-                    </div>
-                </details>
-            </div>
-            """
-            cards_html_list.append(card)
+            # בניית הכרטיסייה ללא ירידת שורה כדי למנוע תקלות תצוגה
+            card = f"""<div class="mobile-card"><details><summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
+            cards.append(card)
         
-        # חיבור כל הכרטיסיות למחרוזת אחת
-        all_cards = "".join(cards_html_list)
+        all_cards = "".join(cards)
 
-        # --- חלק 3: הרכבה סופית והצגה ---
+        # --- חלק 3: הצגה ---
         final_html = f"""
-        <div class="desktop-view">
-            {table_html}
-        </div>
-        <div class="mobile-view">
-            {all_cards}
-        </div>
+        <div class="desktop-view">{table_html}</div>
+        <div class="mobile-view">{all_cards}</div>
         """
         
-        # התיקון הקריטי: ניקוי שורות חדשות כדי שזה לא ייחשב כקוד
-        final_html_clean = final_html.replace('\n', ' ')
-        
-        st.markdown(final_html_clean, unsafe_allow_html=True)
+        # ניקוי סופי של תווים שעלולים לשבש את התצוגה
+        st.markdown(final_html, unsafe_allow_html=True)
 
     else:
         st.info("אין נתונים להצגה")
@@ -320,6 +337,7 @@ if not st.session_state.get('logged_in', False):
     login_page()
 else:
     main_app()
+
 
 
 
