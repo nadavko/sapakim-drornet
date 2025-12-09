@@ -1,126 +1,147 @@
 import streamlit as st
 import pandas as pd
-import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import time
 
-# שם קובץ הנתונים (הבסיס נתונים שלנו)
-DATA_FILE = "suppliers_data.csv"
+# --- הגדרות חיבור לגוגל ---
+SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+SHEET_NAME = "ניהול ספקים"
 
-# פונקציה לטעינת הנתונים
+# --- פונקציות עזר לאבטחה ---
+def check_login():
+    """בדיקה האם המשתמש מחובר, ואם לא - הצגת מסך התחברות"""
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
+
+    if not st.session_state['logged_in']:
+        # מסך התחברות
+        st.title("🔒 מערכת ניהול ספקים - הזדהות")
+        
+        with st.form("login_form"):
+            username = st.text_input("שם משתמש")
+            password = st.text_input("סיסמה", type="password")
+            submit = st.form_submit_button("התחבר")
+            
+            if submit:
+                # בדיקה מול רשימת המשתמשים המורשים (המוגדרת ב-Secrets)
+                valid_users = st.secrets["auth"]["users"]
+                
+                # בדיקה אם המשתמש קיים והסיסמה נכונה
+                # המבנה ב-Secrets צריך להיות רשימה של מילונים או מילון פשוט
+                if username in valid_users and valid_users[username] == password:
+                    st.session_state['logged_in'] = True
+                    st.session_state['username'] = username
+                    st.success("התחברת בהצלחה! טוען מערכת...")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("שם משתמש או סיסמה שגויים")
+        return False # לא מחובר
+    return True # מחובר
+
+def get_google_sheet_client():
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
+    client = gspread.authorize(creds)
+    return client
+
 def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    else:
-        # יצירת מבנה בסיסי אם הקובץ לא קיים
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open(SHEET_NAME).sheet1
+        data = sheet.get_all_records()
+        if data:
+            return pd.DataFrame(data)
+        else:
+            return pd.DataFrame(columns=["שם הספק", "תחום עיסוק", "טלפון", "כתובת", "תנאי תשלום"])
+    except Exception as e:
+        st.error(f"שגיאה בטעינת נתונים: {e}")
         return pd.DataFrame(columns=["שם הספק", "תחום עיסוק", "טלפון", "כתובת", "תנאי תשלום"])
 
-# פונקציה לשמירת הנתונים
 def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+    try:
+        client = get_google_sheet_client()
+        sheet = client.open(SHEET_NAME).sheet1
+        sheet.clear()
+        sheet.append_row(df.columns.tolist())
+        sheet.append_rows(df.values.tolist())
+    except Exception as e:
+        st.error(f"שגיאה בשמירה: {e}")
 
-# הגדרות עמוד
-st.set_page_config(page_title="מערכת ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
+# --- התוכנית הראשית ---
+st.set_page_config(page_title="מערכת ספקים", layout="wide")
 
-# --- כותרת ראשית ---
+# שלב 1: חסימת גישה למי שלא מחובר
+if not check_login():
+    st.stop()  # עוצר את ריצת הקוד כאן אם המשתמש לא מחובר
+
+# --- מכאן והלאה הקוד רץ רק למשתמשים מחוברים ---
+
+# הצגת שם המשתמש המחובר בסרגל הצד
+st.sidebar.info(f"מחובר כ: {st.session_state['username']}")
+if st.sidebar.button("התנתק"):
+    st.session_state['logged_in'] = False
+    st.rerun()
+
 st.title("📦 מערכת ניהול ספקים")
 
-# טעינת הנתונים
+# טעינת נתונים (קורית רק אחרי לוגין)
 df = load_data()
 
-# --- סרגל צד (ממשק ניהול) ---
-st.sidebar.header("ממשק ניהול (למנהל בלבד)")
-admin_mode = st.sidebar.checkbox("הפעל מצב עריכה/ניהול")
+# ממשק ניהול (זמין לכולם כרגע, אפשר להגביל רק למנהל אם תרצה)
+st.sidebar.header("ממשק ניהול")
+admin_mode = st.sidebar.checkbox("הפעל מצב עריכה")
 
 if admin_mode:
     st.sidebar.markdown("---")
     action = st.sidebar.radio("בחר פעולה:", ["הוספת ספק ידנית", "יבוא מאקסל", "מחיקת נתונים"])
 
-    # 1. הוספת ספק ידנית
     if action == "הוספת ספק ידנית":
-        st.subheader("הוספת ספק חדש")
-        with st.form("add_supplier_form"):
+        with st.form("add_supplier"):
             name = st.text_input("שם הספק")
-            # ניתן להזין מספר תחומים מופרדים בפסיק
-            field = st.text_input("תחום עיסוק (ניתן לרשום כמה מופרדים בפסיק)")
+            field = st.text_input("תחום עיסוק")
             phone = st.text_input("טלפון")
             address = st.text_input("כתובת")
-            payment_terms = st.selectbox("תנאי תשלום", ["שוטף + 30", "שוטף + 60", "שוטף + 90", "מזומן", "אשראי", "אחר"])
-            
-            submitted = st.form_submit_button("שמור ספק")
-            if submitted:
-                if name and field:
-                    new_data = pd.DataFrame({
-                        "שם הספק": [name],
-                        "תחום עיסוק": [field],
-                        "טלפון": [phone],
-                        "כתובת": [address],
-                        "תנאי תשלום": [payment_terms]
-                    })
-                    df = pd.concat([df, new_data], ignore_index=True)
-                    save_data(df)
-                    st.success(f"הספק {name} נוסף בהצלחה!")
-                    st.rerun() # רענון כדי להציג בטבלה
-                else:
-                    st.error("חובה להזין לפחות שם ספק ותחום עיסוק")
+            payment = st.selectbox("תנאי תשלום", ["שוטף + 30", "שוטף + 60", "שוטף + 90", "מזומן", "אשראי"])
+            if st.form_submit_button("שמור"):
+                new_row = pd.DataFrame([{"שם הספק": name, "תחום עיסוק": field, "טלפון": phone, "כתובת": address, "תנאי תשלום": payment}])
+                df = pd.concat([df, new_row], ignore_index=True)
+                save_data(df)
+                st.success("נשמר!")
+                st.rerun()
 
-    # 2. יבוא מאקסל
     elif action == "יבוא מאקסל":
-        st.subheader("יבוא ספקים מקובץ Excel")
-        st.info("הקובץ חייב להכיל את העמודות: 'שם הספק', 'תחום עיסוק', 'טלפון', 'כתובת', 'תנאי תשלום'")
-        uploaded_file = st.file_uploader("גרור לכאן קובץ אקסל", type=["xlsx", "xls"])
-        
-        if uploaded_file:
-            if st.button("טען נתונים"):
-                try:
-                    excel_data = pd.read_excel(uploaded_file)
-                    # וידוא שיש עמודות תואמות (אופציונלי, כרגע מוסיף הכל)
-                    df = pd.concat([df, excel_data], ignore_index=True)
-                    save_data(df)
-                    st.success("הנתונים נטענו בהצלחה מהאקסל!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"שגיאה בטעינת הקובץ: {e}")
+        f = st.file_uploader("בחר קובץ אקסל")
+        if f and st.button("טען"):
+            try:
+                new_data = pd.read_excel(f).astype(str)
+                df = pd.concat([df, new_data], ignore_index=True)
+                save_data(df)
+                st.success("נטען!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"תקלה: {e}")
 
-    # 3. מחיקת נתונים (לזהירות)
     elif action == "מחיקת נתונים":
-        if st.button("מחק את כל המאגר (זהירות!)"):
-            df = pd.DataFrame(columns=["שם הספק", "תחום עיסוק", "טלפון", "כתובת", "תנאי תשלום"])
-            save_data(df)
-            st.warning("כל הנתונים נמחקו.")
+        if st.button("מחק הכל"):
+            save_data(pd.DataFrame(columns=["שם הספק", "תחום עיסוק", "טלפון", "כתובת", "תנאי תשלום"]))
+            st.warning("נמחק.")
             st.rerun()
 
-# --- תצוגה לעובדים (מסך ראשי) ---
+# תצוגה
 st.markdown("---")
-st.subheader("🔎 חיפוש וצפייה בספקים")
-
-# מנגנון חיפוש
-search_term = st.text_input("חפש לפי שם ספק או תחום עיסוק...", "")
-
+search = st.text_input("חיפוש...")
 if not df.empty:
-    if search_term:
-        # סינון הטבלה לפי החיפוש
-        filtered_df = df[
-            df['שם הספק'].astype(str).str.contains(search_term, case=False, na=False) |
-            df['תחום עיסוק'].astype(str).str.contains(search_term, case=False, na=False)
-        ]
-    else:
-        filtered_df = df
-
-    # הצגת הטבלה בצורה אינטראקטיבית
-    st.dataframe(
-        filtered_df,
-        use_container_width=True,
-        hide_index=True
-    )
+    res = df
+    if search:
+        res = df[df['שם הספק'].str.contains(search, case=False, na=False) | df['תחום עיסוק'].str.contains(search, case=False, na=False)]
     
-    # הצגה ככרטיסיות (יותר נוח בטלפון)
-    st.markdown("### תצוגת כרטיסיות (מותאם לנייד)")
-    for index, row in filtered_df.iterrows():
-        with st.expander(f"📌 {row['שם הספק']} - {row['תחום עיסוק']}"):
-            st.write(f"**טלפון:** {row['טלפון']}")
-            st.write(f"**כתובת:** {row['כתובת']}")
-            st.write(f"**תנאי תשלום:** {row['תנאי תשלום']}")
-            # כפתור חיוג מהיר בטלפון
-            st.markdown(f"[📞 חייג לספק](tel:{row['טלפון']})")
-
-else:
-    st.info("עדיין אין ספקים במערכת. השתמש בממשק הניהול בצד ימין כדי להוסיף.")
+    st.dataframe(res, use_container_width=True, hide_index=True)
+    
+    st.markdown("### כרטיסיות")
+    for _, r in res.iterrows():
+        with st.expander(f"{r['שם הספק']}"):
+            st.write(f"עיסוק: {r['תחום עיסוק']}")
+            st.write(f"טלפון: {r['טלפון']}")
+            st.write(f"תשלום: {r['תנאי תשלום']}")
