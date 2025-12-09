@@ -65,22 +65,19 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* ---- תיקון ספציפי לטבלה של המנהל (st.data_editor) ---- */
-        [data-testid="stDataEditor"] {
+        /* ---- תיקון אגרסיבי לטבלה של המנהל (st.data_editor) ---- */
+        [data-testid="stDataFrame"], [data-testid="stDataEditor"] {
             direction: rtl !important;
-            text-align: right !important;
         }
-        /* יישור הכותרות בטבלה */
-        [data-testid="stDataEditor"] div[role="columnheader"] {
-            direction: rtl !important;
+        /* כותרות */
+        [data-testid="stDataFrame"] th, [data-testid="stDataEditor"] th {
             text-align: right !important;
-            justify-content: flex-start !important; /* מצמיד לימין */
+            direction: rtl !important;
         }
-        /* יישור התאים בטבלה */
-        [data-testid="stDataEditor"] div[role="gridcell"] {
-            direction: rtl !important;
+        /* תאים */
+        [data-testid="stDataFrame"] td, [data-testid="stDataEditor"] td {
             text-align: right !important;
-            justify-content: flex-end !important;
+            direction: rtl !important;
         }
         
         /* טבלה רגילה (HTML) למשתמש */
@@ -107,6 +104,7 @@ def set_css():
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
+            /* צמצום שוליים במובייל */
             .block-container { 
                 padding-top: 1rem !important; 
                 padding-left: 0.5rem !important;
@@ -241,6 +239,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
     with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
     if not df.empty:
+        # לוגיקת סינון
         if selected_category != "הכל":
             df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
         if search:
@@ -250,18 +249,16 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         existing_cols = [c for c in desired_cols if c in df.columns]
         df_display = df[existing_cols].copy()
         
-        # מוסיף את הצ'קבוקס כעמודה אחרונה כדי שבימין-לשמאל תופיע ראשונה מימין
-        # ב Streamlit RTL הטבלה מתהפכת, אז העמודה הראשונה בקוד היא הראשונה מימין
-        df_display.insert(0, "מחיקה", False)
+        df_display.insert(0, "סמן למחיקה", False)
 
         st.write("סמן בתיבה את הספקים למחיקה:")
         
         edited_df = st.data_editor(
             df_display,
             column_config={
-                "מחיקה": st.column_config.CheckboxColumn(
-                    "מחק?",
-                    help="סמן למחיקה",
+                "סמן למחיקה": st.column_config.CheckboxColumn(
+                    "מחיקה?",
+                    help="סמן כדי למחוק ספק זה",
                     default=False,
                     width="small"
                 ),
@@ -278,7 +275,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             use_container_width=True
         )
 
-        selected_rows = edited_df[edited_df["מחיקה"] == True]
+        selected_rows = edited_df[edited_df["סמן למחיקה"] == True]
         
         if not selected_rows.empty:
             st.divider()
@@ -330,53 +327,59 @@ def show_suppliers_table(df, all_fields_list):
     else:
         st.info("אין נתונים להצגה.")
 
-# --- דף כניסה ---
+# --- דף כניסה (מרכוז) ---
 def login_page():
-    st.title("🔐 כניסה למערכת")
-    with st.expander("כלי למנהל: יצירת סיסמה"):
-        p = st.text_input("סיסמה להצפנה")
-        if st.button("הצפן"): st.code(hash_password(p))
+    # יצירת עמודות כדי למרכז את הטופס (1/3 רוחב משמאל, 1/3 באמצע, 1/3 מימין)
+    # משתמשים בעמודות רק כדי למרכז כי כל העמוד הוא wide
+    _, col_centered, _ = st.columns([1, 1.5, 1])
+    
+    with col_centered:
+        st.title("🔐 כניסה למערכת")
+        
+        with st.expander("כלי למנהל: יצירת סיסמה"):
+            p = st.text_input("סיסמה להצפנה")
+            if st.button("הצפן"): st.code(hash_password(p))
 
-    t1, t2 = st.tabs(["התחברות", "הרשמה"])
-    with t1:
-        with st.form("login_form"):
-            user = st.text_input("אימייל").lower().strip()
-            pw = st.text_input("סיסמה", type="password")
-            st.checkbox("זכור אותי")
-            if st.form_submit_button("התחבר"):
-                df_users, _ = get_worksheet_data("users")
-                if not df_users.empty:
-                    df_users['username'] = df_users['username'].astype(str).str.lower().str.strip()
-                    rec = df_users[df_users['username'] == user]
-                    if not rec.empty and check_password(pw, rec.iloc[0]['password']):
-                        st.session_state['logged_in'] = True
-                        st.session_state['username'] = user
-                        st.session_state['name'] = rec.iloc[0]['name']
-                        st.session_state['role'] = rec.iloc[0]['role']
-                        update_active_user(user)
-                        st.success("מתחבר...")
-                        time.sleep(0.5)
-                        st.rerun()
-                    else: st.error("פרטים שגויים")
-                else: st.error("שגיאה")
+        t1, t2 = st.tabs(["התחברות", "הרשמה"])
+        with t1:
+            with st.form("login_form"):
+                user = st.text_input("אימייל").lower().strip()
+                pw = st.text_input("סיסמה", type="password")
+                st.checkbox("זכור אותי")
+                if st.form_submit_button("התחבר"):
+                    df_users, _ = get_worksheet_data("users")
+                    if not df_users.empty:
+                        df_users['username'] = df_users['username'].astype(str).str.lower().str.strip()
+                        rec = df_users[df_users['username'] == user]
+                        if not rec.empty and check_password(pw, rec.iloc[0]['password']):
+                            st.session_state['logged_in'] = True
+                            st.session_state['username'] = user
+                            st.session_state['name'] = rec.iloc[0]['name']
+                            st.session_state['role'] = rec.iloc[0]['role']
+                            update_active_user(user)
+                            st.success("מתחבר...")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else: st.error("פרטים שגויים")
+                    else: st.error("שגיאה")
 
-    with t2:
-        with st.form("signup_form"):
-            new_email = st.text_input("אימייל").lower().strip()
-            new_pass = st.text_input("סיסמה", type="password")
-            fname = st.text_input("שם מלא")
-            if st.form_submit_button("הירשם"):
-                if not is_valid_email(new_email): st.error("אימייל לא תקין")
-                else:
-                    df_u, _ = get_worksheet_data("users")
-                    df_p, _ = get_worksheet_data("pending_users")
-                    exists = False
-                    if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists = True
-                    if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists = True
-                    if exists: st.error("קיים משתמש כזה")
+        with t2:
+            with st.form("signup_form"):
+                new_email = st.text_input("אימייל").lower().strip()
+                new_pass = st.text_input("סיסמה", type="password")
+                fname = st.text_input("שם מלא")
+                if st.form_submit_button("הירשם"):
+                    if not is_valid_email(new_email): st.error("אימייל לא תקין")
                     else:
-                        add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
-                        st.success("בקשה נשלחה")
+                        df_u, _ = get_worksheet_data("users")
+                        df_p, _ = get_worksheet_data("pending_users")
+                        exists = False
+                        if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists = True
+                        if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists = True
+                        if exists: st.error("קיים משתמש כזה")
+                        else:
+                            add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
+                            st.success("בקשה נשלחה")
 
 # --- ראשי ---
 def main_app():
