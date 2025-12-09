@@ -21,44 +21,47 @@ def check_password(plain_text_password, hashed_password):
     except ValueError:
         return False
 
-# --- עיצוב לימין (RTL) - הגרסה המלאה והמתוקנת ---
+# --- עיצוב לימין (RTL) - הגרסה האגרסיבית לתיקון הפס ---
 def set_rtl_css():
     st.markdown("""
     <style>
-        /* 1. הופכים את הכיוון הראשי של האפליקציה (כדי שהתפריט יהיה בימין) */
+        /* 1. הופכים את הכיוון הראשי לימין (כדי שהתפריט יהיה בימין) */
         .stApp {
             direction: rtl;
             text-align: right;
         }
 
-        /* 2. תיקון קריטי לנייד: הסתרת "ידית הגרירה" שיוצרת את הקו האפור באמצע המסך */
+        /* 2. הסתרת ידית הגרירה - שימוש ב-important כדי לוודא שזה נעלם! */
         [data-testid="stSidebarResizeHandle"] {
-            display: none;
+            display: none !important;
+            width: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
 
-        /* 3. יישור טקסטים גורף לימין (כולל מסך הכניסה) */
+        /* 3. ביטול גבולות (Borders) של התפריט שיכולים להיראות כמו קו */
+        [data-testid="stSidebar"] {
+            direction: rtl;
+            text-align: right;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        /* 4. יישור טקסטים גורף לימין */
         h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox {
             text-align: right !important;
         }
 
-        /* 4. סידור הלשוניות (Tabs) במסך הכניסה שיהיו מימין לשמאל */
+        /* 5. תיקון ללשוניות (Tabs) */
         .stTabs [data-baseweb="tab-list"] {
             flex-direction: row-reverse;
             justify-content: flex-end;
         }
         
-        /* 5. יישור שדות קלט (שלא יכתבו הפוך) */
+        /* 6. יישור שדות קלט */
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
             direction: rtl;
             text-align: right;
-        }
-        
-        /* 6. התאמת התפריט הצידי */
-        [data-testid="stSidebar"] {
-            direction: rtl;
-            text-align: right;
-            border-right: none; /* ביטול קו בצד ימין */
-            border-left: 1px solid #f0f2f6; /* העברת הקו לצד שמאל */
         }
         
         /* 7. כפתורי רדיו וצ'קבוקס */
@@ -71,9 +74,21 @@ def set_rtl_css():
             justify-content: flex-end;
         }
         
-        /* הסתרת סרגל כלים של אלמנטים */
+        /* הסתרת סרגל כלים מיותר */
         [data-testid="stElementToolbar"] {
             display: none;
+        }
+
+        /* הגדרה ספציפית למובייל כדי לוודא ששום פס לא מופיע */
+        @media (max-width: 768px) {
+            [data-testid="stSidebarResizeHandle"] {
+                display: none !important;
+                visibility: hidden !important;
+            }
+            [data-testid="stSidebar"] {
+                border-right: none !important;
+                border-left: none !important;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -109,7 +124,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- תצוגת טבלה (רספונסיבית ונקייה) ---
+# --- תצוגת טבלה (מתוקנת) ---
 def show_suppliers_table(df):
     st.subheader("רשימת ספקים")
     search = st.text_input("חיפוש חופשי...", "")
@@ -121,7 +136,7 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # 1. עיצוב CSS פנימי לטבלה
+        # 1. CSS
         st.markdown("""
         <style>
             /* מחשב */
@@ -147,17 +162,17 @@ def show_suppliers_table(df):
         </style>
         """, unsafe_allow_html=True)
 
-        # 2. HTML מחשב
+        # 2. HTML
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # 3. HTML נייד (בנייה שטוחה)
+        # 3. Cards
         cards = []
         for _, row in df.iterrows():
             card = f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
             cards.append(card)
         all_cards = "".join(cards)
 
-        # 4. הדפסה (עם ניקוי רווחים למניעת שגיאות תצוגה)
+        # 4. Print (Clean spaces)
         final_html = f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{all_cards}</div>"""
         st.markdown(final_html.replace('\n', ' '), unsafe_allow_html=True)
 
@@ -223,7 +238,6 @@ def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
     
-    # תפריט צד
     st.sidebar.markdown(f"**שלום {user_name}**")
     if st.sidebar.button("יציאה"):
         st.session_state['logged_in'] = False
