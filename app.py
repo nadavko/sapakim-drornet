@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 import bcrypt
 import re
@@ -11,7 +11,7 @@ import re
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SHEET_NAME = "ניהול ספקים"
 
-# --- פונקציות עזר וולידציה ---
+# --- פונקציות עזר ---
 def hash_password(password):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     return hashed.decode('utf-8')
@@ -41,44 +41,28 @@ def check_duplicate_supplier(df, name, phone, email):
         return True, f"שגיאה: אימייל '{email}' כבר קיים."
     return False, ""
 
-# --- CSS מורחב ---
+# --- CSS עיצוב ---
 def set_css():
     st.markdown("""
     <style>
         .stApp { direction: rtl; text-align: right; }
-        
-        /* יישור כללי לימין */
         h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
-        
-        /* טאבים */
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* טבלה */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
 
-        /* מובייל קארד */
         .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right !important; }
         .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
-        
-        /* מונה משתמשים מחוברים (צף) */
-        .online-counter {
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            background-color: #4CAF50;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: 0.8em;
-            z-index: 9999;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            cursor: default;
-        }
+        .mobile-card summary::after { content: "+"; font-size: 1.2em; margin-right: 10px; color: #666; }
+        .mobile-card details[open] summary::after { content: "-"; }
+        .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
+        .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
 
-        /* מובייל CSS */
+        .online-counter { position: fixed; bottom: 10px; left: 10px; background-color: #4CAF50; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.8em; z-index: 9999; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+
         .desktop-view { display: block; }
         .mobile-view { display: none; }
         @media only screen and (max-width: 768px) {
@@ -106,63 +90,40 @@ def get_worksheet_data(worksheet_name):
     except Exception:
         return pd.DataFrame(), None
 
-# --- ניהול משתמשים מחוברים (Online Users) ---
+# --- ניהול משתמשים מחוברים ---
 def update_active_user(username):
-    """מעדכן זמן נראה לאחרונה בגיליון active_users"""
-    # כדי לחסוך קריאות API, נעדכן רק אם עברה דקה מהעדכון האחרון בסשן
     current_time = datetime.now()
     if 'last_api_update' in st.session_state:
         if (current_time - st.session_state['last_api_update']).seconds < 60:
             return
-
     try:
         client = get_client()
         sheet = client.open(SHEET_NAME).worksheet("active_users")
-        
-        # קריאת כל הרשומות
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        
         timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # אם המשתמש קיים, מעדכנים. אם לא, מוסיפים.
         if not df.empty and username in df['username'].astype(str).values:
-            # מציאת השורה (שיטס מתחיל מ-2)
             idx = df.index[df['username'] == username].tolist()[0] + 2
             sheet.update_cell(idx, 2, timestamp_str)
         else:
             sheet.append_row([username, timestamp_str])
-        
-        # ניקוי משתמשים לא פעילים (מעל 5 דקות) - נעשה את זה "על הדרך"
-        # זה קצת יקר מבחינת ביצועים, אז נעשה את זה לעיתים רחוקות או רק למנהל
-        # כרגע נשאיר פשוט
-        
         st.session_state['last_api_update'] = current_time
-    except Exception as e:
-        pass # התעלמות משגיאות עדכון כדי לא לתקוע את המערכת
+    except: pass
 
 def get_online_users_count_and_names():
-    """מחזיר מספר משתמשים ורשימת שמות של מי שהיה פעיל ב-5 דקות האחרונות"""
     try:
         df, _ = get_worksheet_data("active_users")
-        if df.empty:
-            return 0, []
-        
+        if df.empty: return 0, []
         now = datetime.now()
         active_names = []
-        
         for _, row in df.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
-                # מי שנראה ב-5 הדקות האחרונות נחשב מחובר
                 if (now - last_seen).total_seconds() < 300: 
                     active_names.append(row['username'])
-            except:
-                continue
-                
+            except: continue
         return len(active_names), active_names
-    except:
-        return 0, []
+    except: return 0, []
 
 # --- פעולות בסיס ---
 def add_row_to_sheet(worksheet_name, row_data):
@@ -188,69 +149,52 @@ def get_settings_lists():
     payment_terms = [x for x in df['payment_terms'].tolist() if x]
     return fields, payment_terms
 
-# --- מחיקה עם אישור (Modal) ---
+# --- מחיקה עם אישור ---
 @st.dialog("אישור מחיקה")
 def confirm_delete_supplier(supplier_name):
     st.write(f"הספק **{supplier_name}** עומד להימחק.")
-    st.write("האם אתה בטוח?")
     col1, col2 = st.columns(2)
     if col1.button("כן, מחק", type="primary"):
         if delete_row_from_sheet("suppliers", "שם הספק", supplier_name):
-            st.success("נמחק בהצלחה")
+            st.success("נמחק")
             st.rerun()
-        else:
-            st.error("אירעה שגיאה במחיקה")
-    if col2.button("ביטול"):
-        st.rerun()
+        else: st.error("שגיאה")
+    if col2.button("ביטול"): st.rerun()
 
-# --- תצוגת טבלה חכמה למנהל (עם מחיקה) ---
+# --- טבלאות ---
 def show_admin_table(df):
     if df.empty:
         st.info("אין נתונים")
         return
-
-    # הוספת כפתור מחיקה לכל שורה באמצעות עמודות
-    # כותרות
     cols = st.columns([3, 2, 2, 1])
-    cols[0].write("**שם הספק**")
+    cols[0].write("**שם**")
     cols[1].write("**טלפון**")
     cols[2].write("**תחום**")
     cols[3].write("**מחיקה**")
     st.markdown("---")
-    
     for _, row in df.iterrows():
         c = st.columns([3, 2, 2, 1])
         c[0].write(row['שם הספק'])
         c[1].write(row['טלפון'])
         c[2].write(row['תחום עיסוק'])
-        # כפתור מחיקה
         if c[3].button("🗑️", key=f"del_{row['שם הספק']}"):
             confirm_delete_supplier(row['שם הספק'])
 
-# --- תצוגת טבלה לכלל המשתמשים (קריאה בלבד) ---
 def show_suppliers_table(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
-    with col_search:
-        search = st.text_input("🔍 חיפוש חופשי", "")
-    with col_filter:
-        filter_options = ["הכל"] + all_fields_list
-        selected_category = st.selectbox("📂 סינון", filter_options)
+    with col_search: search = st.text_input("🔍 חיפוש", "")
+    with col_filter: selected_category = st.selectbox("📂 סינון", ["הכל"] + all_fields_list)
 
     if not df.empty:
         if selected_category != "הכל":
             df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
         if search:
-            df = df[
-                df['שם הספק'].astype(str).str.contains(search, case=False, na=False) |
-                df['טלפון'].astype(str).str.contains(search, case=False, na=False)
-            ]
+            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # מחשב
         desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in desired_cols if c in df.columns]
         table_html = df[final_cols].to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # מובייל
         cards = []
         for _, row in df.iterrows():
             card = f"""
@@ -262,33 +206,28 @@ def show_suppliers_table(df, all_fields_list):
                         <div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div>
                         <div><strong>📍:</strong> {row['כתובת']}</div>
                         <div><strong>👤:</strong> {row.get('שם איש קשר','')}</div>
+                        <div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div>
                         <div style="font-size: 0.8em; color: #888; margin-top:5px;">נוסף ע"י: {row.get('נוסף על ידי','')}</div>
                     </div>
                 </details>
             </div>"""
             cards.append(card)
-        
         st.markdown(f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{"".join(cards)}</div>""", unsafe_allow_html=True)
-    else:
-        st.info("אין נתונים להצגה.")
+    else: st.info("אין נתונים")
 
 # --- דף כניסה ---
 def login_page():
     st.title("🔐 כניסה למערכת")
-    
     with st.expander("כלי למנהל: יצירת סיסמה"):
         p = st.text_input("סיסמה להצפנה")
         if st.button("הצפן"): st.code(hash_password(p))
 
     t1, t2 = st.tabs(["התחברות", "הרשמה"])
-
     with t1:
         with st.form("login_form"):
             user = st.text_input("אימייל").lower().strip()
             pw = st.text_input("סיסמה", type="password")
-            # הוספת צ'קבוקס זכור אותי
-            remember_me = st.checkbox("זכור אותי למשך שעתיים")
-            
+            st.checkbox("זכור אותי")
             if st.form_submit_button("התחבר"):
                 df_users, _ = get_worksheet_data("users")
                 if not df_users.empty:
@@ -299,15 +238,12 @@ def login_page():
                         st.session_state['username'] = user
                         st.session_state['name'] = rec.iloc[0]['name']
                         st.session_state['role'] = rec.iloc[0]['role']
-                        # עדכון משתמש מחובר
                         update_active_user(user)
                         st.success("מתחבר...")
                         time.sleep(0.5)
                         st.rerun()
-                    else:
-                        st.error("פרטים שגויים")
-                else:
-                    st.error("שגיאת התחברות")
+                    else: st.error("פרטים שגויים")
+                else: st.error("שגיאה")
 
     with t2:
         with st.form("signup_form"):
@@ -315,119 +251,71 @@ def login_page():
             new_pass = st.text_input("סיסמה", type="password")
             fname = st.text_input("שם מלא")
             if st.form_submit_button("הירשם"):
-                if not is_valid_email(new_email):
-                    st.error("אימייל לא תקין")
+                if not is_valid_email(new_email): st.error("אימייל לא תקין")
                 else:
-                    # בדיקת כפילות יסודית (גם במשתמשים קיימים וגם בממתינים)
                     df_u, _ = get_worksheet_data("users")
                     df_p, _ = get_worksheet_data("pending_users")
-                    
                     exists = False
                     if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists = True
                     if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists = True
-                    
-                    if exists:
-                        st.error("קיים כבר משתמש עם האימייל הזה, אנא פנה למנהל.")
+                    if exists: st.error("קיים משתמש כזה")
                     else:
                         add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
-                        st.success("הבקשה נשלחה לאישור.")
+                        st.success("בקשה נשלחה")
 
-# --- אפליקציה ראשית ---
+# --- ראשי ---
 def main_app():
-    # רענון סשן אוטומטי - אם המשתמש היה מחובר, נשאיר אותו מחובר
-    # Streamlit מנהל את זה לבד כל עוד הדפדפן פתוח
-    
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
     current_user_email = st.session_state.get('username', '')
-
-    # עדכון שהמשתמש פעיל
     update_active_user(current_user_email)
-
-    # טעינת נתונים
+    
     fields_list, payment_list = get_settings_lists()
     df_suppliers, _ = get_worksheet_data("suppliers")
 
-    # סרגל עליון
     c1, c2, c3 = st.columns([6, 2, 1])
     c1.title(f"שלום, {user_name}")
-    
-    # כפתור רענון למנהל (וגם למשתמש)
-    if c2.button("🔄 רענן נתונים"):
+    if c2.button("🔄 רענן"):
         st.cache_data.clear()
         st.rerun()
-        
     if c3.button("יציאה"):
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # --- התראות למשתמש ---
-    # 1. ספקים חדשים מהשבוע האחרון
-    if not df_suppliers.empty and 'pending_suppliers' in SHEET_NAME: # הנחה שיש תאריך הוספה בגיליון כלשהו, אבל ב suppliers אין לנו כרגע תאריך הוספה אלא רק ב pending.
-        # נבדוק אם יש עמודת תאריך, אם לא - לא נציג
-        pass 
-        # (הערה: כדי להציג "חדש השבוע" צריך להוסיף עמודת תאריך אישור ל-suppliers. כרגע נדלג כדי לא לשבור את הגיליון הקיים שלך, אבל המנגנון קיים ב-Pending).
-
-    # 2. סטטוס הגשות שלי
-    with st.expander("📬 ההגשות שלי והודעות מערכת"):
-        # בדיקה בנדחים
+    # הודעות
+    with st.expander("📬 ההגשות שלי"):
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
-        my_rejections = []
+        # --- התיקון כאן: אתחול כ-DataFrame ריק ---
+        my_rejections = pd.DataFrame() 
         if not df_rejected.empty:
-            # סינון לפי מי שהוסיף (בהנחה שזה האימייל או השם)
-            # נחפש גם לפי שם וגם לפי מייל ליתר ביטחון
             mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rejected['נוסף על ידי'].astype(str).str.contains(current_user_email, na=False)
             my_rejections = df_rejected[mask]
         
         if not my_rejections.empty:
-            st.error(f"יש לך {len(my_rejections)} ספקים שנדחו. (בדוק בטאב ספקים אם הם נמחקו או הועברו)")
-            st.dataframe(my_rejections[['שם הספק', 'תאריך דחייה']])
-        
-        # בדיקה במאושרים (השבוע האחרון למשל, או הכל)
-        my_approved = df_suppliers[df_suppliers['נוסף על ידי'] == user_name]
-        if not my_approved.empty:
-            st.success(f"סה\"כ ספקים שאושרו עבורך: {len(my_approved)}")
+            st.error(f"יש לך {len(my_rejections)} ספקים שנדחו.")
+            st.dataframe(my_rejections[['שם הספק', 'תאריך דחייה']], use_container_width=True)
         else:
-            st.info("אין עדכונים חדשים.")
+            st.info("אין הודעות דחייה.")
 
     st.markdown("---")
 
-    # --- מנהל ---
     if user_role == 'admin':
-        # ספירת ממתינים לצורך באדג'ים
         df_pend_users, _ = get_worksheet_data("pending_users")
-        count_users = len(df_pend_users) if not df_pend_users.empty else 0
-        
+        c_users = len(df_pend_users) if not df_pend_users.empty else 0
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
-        count_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
+        c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        # כותרות טאבים עם מספרים
-        tab_titles = [
-            "📋 רשימת ספקים", 
-            f"⏳ אישור ספקים ({count_supp})", 
-            f"👥 אישור משתמשים ({count_users})", 
-            "➕ הוספת ספק", 
-            "⚙️ הגדרות", 
-            "📥 יבוא"
-        ]
-        tabs = st.tabs(tab_titles)
+        tabs = st.tabs(["📋 ספקים", f"⏳ ספקים ({c_supp})", f"👥 משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # 1. רשימה + מחיקה
-        with tabs[0]:
-            st.info("טיפ: למחיקת ספק, לחץ על אייקון הפח בשורה המתאימה.")
-            show_admin_table(df_suppliers) # טבלה מיוחדת למנהל
-
-        # 2. אישור ספקים
+        with tabs[0]: show_admin_table(df_suppliers)
+        
         with tabs[1]:
-            if count_supp > 0:
+            if c_supp > 0:
                 for idx, row in df_pend_supp.iterrows():
-                    with st.expander(f"{row['שם הספק']} (נוסף ע\"י {row.get('נוסף על ידי')})"):
+                    with st.expander(f"{row['שם הספק']}"):
                         st.write(f"תחום: {row['תחום עיסוק']} | טלפון: {row['טלפון']}")
-                        
-                        # בדיקת כפילות
-                        is_dup, err = check_duplicate_supplier(df_suppliers, row['שם הספק'], row['טלפון'], row.get('אימייל',''))
-                        if is_dup: st.warning(err)
-
+                        dup, err = check_duplicate_supplier(df_suppliers, row['שם הספק'], row['טלפון'], row.get('אימייל',''))
+                        if dup: st.warning(err)
                         c1, c2 = st.columns(2)
                         if c1.button("אשר", key=f"ok_s_{idx}"):
                             add_row_to_sheet("suppliers", [
@@ -436,50 +324,31 @@ def main_app():
                                 row.get('שם איש קשר',''), row['נוסף על ידי']
                             ])
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
-                            st.success("אושר!")
-                            time.sleep(1)
                             st.rerun()
-                        
-                        if c2.button("דחה (העבר לארכיון)", key=f"no_s_{idx}"):
-                            # שמירה בלוג דחיות
+                        if c2.button("דחה", key=f"no_s_{idx}"):
                             row_data = row.values.tolist()
-                            row_data.append(str(datetime.now())) # הוספת תאריך דחייה
+                            row_data.append(str(datetime.now()))
                             add_row_to_sheet("rejected_suppliers", row_data)
-                            
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
-                            st.warning("הספק נדחה והועבר לארכיון דחיות.")
-                            time.sleep(1)
                             st.rerun()
-            else:
-                st.info("אין ספקים ממתינים.")
+            else: st.info("אין ספקים ממתינים")
 
-        # 3. אישור משתמשים
         with tabs[2]:
-            if count_users > 0:
+            if c_users > 0:
                 for idx, row in df_pend_users.iterrows():
-                    st.write(f"בקשה מ: **{row['name']}** ({row['username']})")
+                    st.write(f"בקשה: {row['name']} ({row['username']})")
                     c1, c2 = st.columns(2)
-                    if c1.button("אשר משתמש", key=f"ok_u_{idx}"):
+                    if c1.button("אשר", key=f"ok_u_{idx}"):
                         add_row_to_sheet("users", [row['username'], row['password'], 'user', row['name']])
                         delete_row_from_sheet("pending_users", "username", row['username'])
-                        st.success("משתמש נוצר!")
-                        time.sleep(1)
                         st.rerun()
-                    
-                    # כפתור דחיית משתמש
-                    if c2.button("דחה בקשה", key=f"no_u_{idx}"):
+                    if c2.button("דחה", key=f"no_u_{idx}"):
                         delete_row_from_sheet("pending_users", "username", row['username'])
-                        st.warning("הבקשה נמחקה.")
-                        time.sleep(1)
                         st.rerun()
-                    st.divider()
-            else:
-                st.info("אין משתמשים חדשים.")
+            else: st.info("אין משתמשים")
 
-        # 4. הוספה (מנהל)
         with tabs[3]:
             with st.form("adm_add"):
-                st.subheader("הוספת ספק מיידית")
                 s_name = st.text_input("שם *")
                 s_fields = st.multiselect("תחום *", fields_list)
                 s_phone = st.text_input("טלפון *")
@@ -499,15 +368,8 @@ def main_app():
                                 time.sleep(1)
                                 st.rerun()
                     else: st.error("חסרים פרטים")
-
-        # 5. הגדרות
-        with tabs[4]:
-            c1, c2 = st.columns(2)
-            # כאן צריך להעתיק את לוגיקת ניהול הרשימות מהקוד הקודם שלך (update_settings_list)
-            # למען הקיצור בקוד התשובה, אני משאיר את זה פשוט, אבל הפונקציות קיימות למעלה.
-            st.info("כאן יהיה ניהול התחומים ותנאי התשלום (כמו בקוד הקודם)")
-
-        # 6. יבוא
+        
+        with tabs[4]: st.info("ניהול רשימות (פונקציות קיימות)")
         with tabs[5]:
             up = st.file_uploader("Excel", type="xlsx")
             if up and st.button("טען"):
@@ -516,17 +378,14 @@ def main_app():
                     cl = get_client()
                     sh = cl.open(SHEET_NAME).worksheet("suppliers")
                     sh.append_rows(d.values.tolist())
-                    st.success("נטען!")
+                    st.success("נטען")
                 except: st.error("שגיאה")
 
-    # --- משתמש רגיל ---
     else:
-        user_tabs = st.tabs(["🔎 חיפוש", "➕ הצעה חדשה"])
-        with user_tabs[0]:
-            show_suppliers_table(df_suppliers, fields_list)
+        user_tabs = st.tabs(["🔎 חיפוש", "➕ הצעה"])
+        with user_tabs[0]: show_suppliers_table(df_suppliers, fields_list)
         with user_tabs[1]:
             with st.form("u_add"):
-                st.subheader("הצעת ספק")
                 s_name = st.text_input("שם *")
                 s_fields = st.multiselect("תחום *", fields_list)
                 s_phone = st.text_input("טלפון *")
@@ -534,7 +393,7 @@ def main_app():
                 s_contact = st.text_input("איש קשר")
                 s_addr = st.text_input("כתובת *")
                 s_pay = st.selectbox("תנאי תשלום *", payment_list)
-                if st.form_submit_button("שלח לאישור"):
+                if st.form_submit_button("שלח"):
                     if s_name and s_fields and s_phone and s_email and s_addr:
                         if not is_valid_email(s_email): st.error("אימייל שגוי")
                         else:
@@ -545,30 +404,12 @@ def main_app():
                                 st.success("נשלח!")
                     else: st.error("חסרים פרטים")
 
-    # --- הצגת מונה מחוברים (צף למטה) ---
     count_online, names_online = get_online_users_count_and_names()
-    
-    # טריק להצגת דיאלוג בלחיצה על המונה (רק למנהל)
-    # מכיוון שאי אפשר לשים כפתור בתוך HTML צף בקלות, נשתמש ב-expander בתחתית העמוד או בפתרון יצירתי
-    # הפתרון הכי נקי בסטרימליט: נציג את זה בסיידבר (מוסתר במובייל) או בתחתית הדף
-    
-    st.markdown(f"""
-    <div class="online-counter">
-        🟢 מחוברים כעת: {count_online}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # למנהל בלבד - אפשרות לראות מי מחובר (בתחתית המסך)
+    st.markdown(f"""<div class="online-counter">🟢 מחוברים: {count_online}</div>""", unsafe_allow_html=True)
     if user_role == 'admin':
-        with st.expander("👀 ראה מי מחובר", expanded=False):
-            st.write(", ".join(names_online))
+        with st.expander("👀 מי מחובר"): st.write(", ".join(names_online))
 
-# --- הרצה ---
 set_css()
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-
-if not st.session_state['logged_in']:
-    login_page()
-else:
-    main_app()
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+if not st.session_state['logged_in']: login_page()
+else: main_app()
