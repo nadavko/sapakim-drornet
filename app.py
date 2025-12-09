@@ -52,7 +52,7 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* טבלה */
+        /* טבלה רגילה למשתמש */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
@@ -131,7 +131,7 @@ def get_online_users_count_and_names():
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס ---
+# --- פעולות בסיס בגיליון ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -147,7 +147,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- הגדרות ---
+# --- הגדרות (רשימות) ---
 def get_settings_lists():
     df, _ = get_worksheet_data("settings")
     if df.empty: return [], []
@@ -172,19 +172,94 @@ def update_settings_list(column_name, new_list):
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
 
-# --- מחיקה עם אישור ---
-@st.dialog("אישור מחיקה")
-def confirm_delete_supplier(supplier_name):
-    st.write(f"הספק **{supplier_name}** עומד להימחק.")
+# --- מחיקה מרובה עם אישור ---
+@st.dialog("אישור מחיקה מרובה")
+def confirm_bulk_delete(suppliers_to_delete):
+    st.write(f"אתה עומד למחוק **{len(suppliers_to_delete)}** ספקים מהמערכת.")
+    st.write("הפעולה היא בלתי הפיכה. האם להמשיך?")
+    
     col1, col2 = st.columns(2)
-    if col1.button("כן, מחק", type="primary"):
-        if delete_row_from_sheet("suppliers", "שם הספק", supplier_name):
-            st.success("נמחק")
+    if col1.button("כן, מחק את המסומנים", type="primary"):
+        progress_bar = st.progress(0)
+        deleted_count = 0
+        
+        for i, supplier_name in enumerate(suppliers_to_delete):
+            # מחיקה מהגיליון אחד אחד
+            if delete_row_from_sheet("suppliers", "שם הספק", supplier_name):
+                deleted_count += 1
+            progress_bar.progress((i + 1) / len(suppliers_to_delete))
+            
+        if deleted_count > 0:
+            st.success(f"{deleted_count} ספקים נמחקו בהצלחה!")
+            time.sleep(1)
             st.rerun()
-        else: st.error("שגיאה")
-    if col2.button("ביטול"): st.rerun()
+        else:
+            st.error("לא הצלחנו למחוק את הספקים. ייתכן שהם כבר נמחקו.")
+            
+    if col2.button("ביטול"):
+        st.rerun()
 
-# --- תצוגת טבלה אחידה (HTML) ---
+# --- תצוגת טבלה למנהל (עם צ'קבוקסים) ---
+def show_admin_table_with_checkboxes(df, all_fields_list):
+    # אזור סינון וחיפוש
+    col_search, col_filter = st.columns([2, 1])
+    with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
+    with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
+
+    if not df.empty:
+        # לוגיקת סינון
+        if selected_category != "הכל":
+            df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
+        if search:
+            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        
+        # סידור עמודות
+        desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
+        existing_cols = [c for c in desired_cols if c in df.columns]
+        df_display = df[existing_cols].copy()
+        
+        # הוספת עמודת בחירה
+        df_display.insert(0, "סמן למחיקה", False)
+
+        st.write("סמן בתיבה מימין את הספקים שברצונך למחוק:")
+        
+        # שימוש ב-Data Editor לטבלה יפה עם צ'קבוקסים
+        edited_df = st.data_editor(
+            df_display,
+            column_config={
+                "סמן למחיקה": st.column_config.CheckboxColumn(
+                    "מחיקה?",
+                    help="סמן כדי למחוק ספק זה",
+                    default=False,
+                ),
+                # הופכים את שאר העמודות לקריאה בלבד כדי למנוע טעויות
+                "שם הספק": st.column_config.TextColumn(disabled=True),
+                "תחום עיסוק": st.column_config.TextColumn(disabled=True),
+                "טלפון": st.column_config.TextColumn(disabled=True),
+                "אימייל": st.column_config.TextColumn(disabled=True),
+                "כתובת": st.column_config.TextColumn(disabled=True),
+                "שם איש קשר": st.column_config.TextColumn(disabled=True),
+                "תנאי תשלום": st.column_config.TextColumn(disabled=True),
+                "נוסף על ידי": st.column_config.TextColumn(disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+
+        # בדיקה מי סומן
+        selected_rows = edited_df[edited_df["סמן למחיקה"] == True]
+        
+        if not selected_rows.empty:
+            st.divider()
+            st.warning(f"נבחרו {len(selected_rows)} ספקים למחיקה.")
+            if st.button("🗑️ לחץ כאן למחיקת הספקים המסומנים", type="primary"):
+                # שולחים את רשימת השמות למחיקה
+                confirm_bulk_delete(selected_rows["שם הספק"].tolist())
+
+    else:
+        st.info("אין נתונים.")
+
+# --- תצוגת טבלה למשתמש רגיל ---
 def show_suppliers_table(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -196,7 +271,6 @@ def show_suppliers_table(df, all_fields_list):
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר עמודות
         desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in desired_cols if c in df.columns]
         
@@ -315,21 +389,11 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        # שמות הטאבים
-        tabs = st.tabs(["📋 רשימת ספקים (ניהול)", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # 1. רשימת ספקים + מחיקה (משופר)
+        # 1. רשימת ספקים (ממשק חדש עם צ'קבוקסים)
         with tabs[0]:
-            # אזור מחיקה למעלה - הכי נקי ומסודר
-            if not df_suppliers.empty:
-                with st.expander("🗑️ מחיקת ספק (לחץ לפתיחה)", expanded=False):
-                    c_del_1, c_del_2 = st.columns([3, 1])
-                    supplier_to_delete = c_del_1.selectbox("בחר ספק למחיקה:", df_suppliers['שם הספק'].unique())
-                    if c_del_2.button("מחק ספק נבחר", type="primary"):
-                        confirm_delete_supplier(supplier_to_delete)
-            
-            # הצגת הטבלה הרגילה (בדיוק כמו למשתמשים)
-            show_suppliers_table(df_suppliers, fields_list)
+            show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
         # 2. אישור ספקים
         with tabs[1]:
@@ -394,7 +458,7 @@ def main_app():
                                 st.rerun()
                     else: st.error("חסרים פרטים")
         
-        # 5. הגדרות (הוחזר למקום)
+        # 5. הגדרות
         with tabs[4]:
             st.subheader("ניהול רשימות")
             c_fields, c_terms = st.columns(2)
