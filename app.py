@@ -4,7 +4,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import time
-import bcrypt  # הספרייה החדשה להצפנה
+import bcrypt
 
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -12,32 +12,26 @@ SHEET_NAME = "ניהול ספקים"
 
 # --- פונקציות עזר להצפנה ---
 def hash_password(password):
-    """מקבל סיסמה רגילה ומחזיר סיסמה מוצפנת"""
-    # המרת הסיסמה לביטים, יצירת מלח (Salt) והצפנה
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8') # המרה חזרה למחרוזת לשמירה בגיליון
+    return hashed.decode('utf-8')
 
 def check_password(plain_text_password, hashed_password):
-    """בודק אם הסיסמה שהוזנה תואמת לסיסמה המוצפנת"""
     try:
         return bcrypt.checkpw(plain_text_password.encode('utf-8'), hashed_password.encode('utf-8'))
     except ValueError:
         return False
 
-# --- עיצוב לימין (RTL) ---
-def set_rtl_css():
+# --- עיצוב לימין (RTL) - תיקון שמונע את הקו החוצה ---
 def set_rtl_css():
     st.markdown("""
     <style>
-        /* במקום להפוך את כל האפליקציה, נהפוך רק את התוכן */
-        
-        /* יישור כותרות וטקסטים */
-        h1, h2, h3, h4, h5, h6, p, .stMarkdown {
+        /* יישור טקסטים וכותרות לימין */
+        h1, h2, h3, h4, h5, h6, p, .stMarkdown, .stButton, .stAlert {
             text-align: right !important;
             direction: rtl;
         }
         
-        /* יישור תיבות קלט (input) */
+        /* יישור שדות קלט */
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
             direction: rtl;
             text-align: right;
@@ -49,18 +43,19 @@ def set_rtl_css():
             direction: rtl;
         }
         
-        /* תיקון ספציפי לכפתורי רדיו וצ'קבוקס שיהיו מימין לשמאל */
+        /* יישור כפתורי רדיו וצ'קבוקס */
         .stRadio, .stCheckbox {
             direction: rtl;
             text-align: right;
         }
         
-        /* הסתרת כפתור "ניהול" מעל הטבלה כדי שלא יפריע */
-        .stButton button {
-            width: 100%;
+        /* הסתרת כפתורי ניהול מיותרים של הטבלה */
+        [data-testid="stElementToolbar"] {
+            display: none;
         }
     </style>
     """, unsafe_allow_html=True)
+
 # --- חיבור לגוגל ---
 def get_client():
     creds_dict = dict(st.secrets["gcp_service_account"])
@@ -92,16 +87,71 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- דף התחברות והרשמה ---
+# --- תצוגת טבלה חכמה (רספונסיבית) ---
+def show_suppliers_table(df):
+    st.subheader("רשימת ספקים")
+    search = st.text_input("חיפוש חופשי...", "")
+    
+    if not df.empty:
+        if search:
+            df = df[
+                df['שם הספק'].astype(str).str.contains(search, case=False, na=False) |
+                df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
+            ]
+        
+        # 1. עיצוב CSS
+        st.markdown("""
+        <style>
+            /* מחשב */
+            .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; }
+            .rtl-table th { background-color: #f0f2f6; text-align: right; padding: 10px; border-bottom: 2px solid #ddd; color: #333; }
+            .rtl-table td { text-align: right; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
+            
+            /* נייד */
+            .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right; }
+            .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; }
+            .mobile-card summary::after { content: "+"; float: left; font-weight: bold; }
+            .mobile-card details[open] summary::after { content: "-"; }
+            .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
+            .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
+
+            /* שליטה בתצוגה */
+            .desktop-view { display: block; }
+            .mobile-view { display: none; }
+            @media only screen and (max-width: 768px) {
+                .desktop-view { display: none; }
+                .mobile-view { display: block; }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # 2. יצירת HTML למחשב
+        table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
+        
+        # 3. יצירת HTML לנייד (בנייה שטוחה למניעת שגיאות)
+        cards = []
+        for _, row in df.iterrows():
+            card = f"""<div class="mobile-card"><details><summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
+            cards.append(card)
+        all_cards = "".join(cards)
+
+        # 4. הדפסה
+        final_html = f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{all_cards}</div>"""
+        st.markdown(final_html, unsafe_allow_html=True)
+
+    else:
+        st.info("אין נתונים להצגה")
+
+# --- דף כניסה ---
 def login_page():
     st.title("🔐 כניסה למערכת")
     
-    # כלי עזר זמני ליצירת סיסמה מוצפנת ראשונית למנהל (מוסתר)
-    with st.expander("כלי למנהל: יצירת Hash לסיסמה (לשימוש ידני ראשוני)"):
+    # כלי עזר למנהל (זמני)
+    with st.expander("כלי למנהל: יצירת Hash לסיסמה"):
         pass_to_hash = st.text_input("הכנס סיסמה להצפנה")
         if st.button("הצפן"):
             st.code(hash_password(pass_to_hash))
-            st.info("העתק את הקוד הזה והדבק אותו בעמודת password בגיליון Google Sheets בשורה של המנהל.")
+            st.info("העתק את הקוד והדבק ב-Google Sheets בעמודת password")
 
     tab1, tab2 = st.tabs(["התחברות", "הרשמה למערכת"])
 
@@ -114,21 +164,15 @@ def login_page():
             if submitted:
                 df_users, _ = get_worksheet_data("users")
                 if not df_users.empty:
-                    # חיפוש המשתמש לפי אימייל
                     user_record = df_users[df_users['username'] == user]
-                    
                     if not user_record.empty:
                         stored_hash = user_record.iloc[0]['password']
-                        role = user_record.iloc[0]['role']
-                        name = user_record.iloc[0]['name']
-                        
-                        # בדיקת הסיסמה מול ההצפנה
                         if check_password(pw, stored_hash):
                             st.session_state['logged_in'] = True
                             st.session_state['username'] = user
-                            st.session_state['name'] = name
-                            st.session_state['role'] = role
-                            st.success(f"ברוך הבא, {name}!")
+                            st.session_state['name'] = user_record.iloc[0]['name']
+                            st.session_state['role'] = user_record.iloc[0]['role']
+                            st.success(f"ברוך הבא, {st.session_state['name']}!")
                             time.sleep(0.5)
                             st.rerun()
                         else:
@@ -136,7 +180,7 @@ def login_page():
                     else:
                         st.error("משתמש לא נמצא")
                 else:
-                    st.error("שגיאת מערכת: מסד הנתונים ריק")
+                    st.error("שגיאת מערכת")
 
     with tab2:
         st.subheader("בקשת הצטרפות")
@@ -144,25 +188,16 @@ def login_page():
             new_email = st.text_input("אימייל")
             new_pass = st.text_input("סיסמה", type="password")
             full_name = st.text_input("שם מלא")
-            signup_submit = st.form_submit_button("הירשם")
-            
-            if signup_submit:
-                if new_email and new_pass and full_name:
-                    # בדיקה אם קיים
-                    df_users, _ = get_worksheet_data("users")
-                    if not df_users.empty and new_email in df_users['username'].values:
-                        st.warning("משתמש קיים")
-                    else:
-                        # --- כאן מתבצעת ההצפנה לפני השליחה להמתנה ---
-                        hashed_pw = hash_password(new_pass)
-                        
-                        row = [new_email, hashed_pw, full_name, str(datetime.now())]
-                        add_row_to_sheet("pending_users", row)
-                        st.success("הבקשה נשלחה לאישור מנהל.")
+            if st.form_submit_button("הירשם"):
+                df_users, _ = get_worksheet_data("users")
+                if not df_users.empty and new_email in df_users['username'].values:
+                    st.warning("משתמש קיים")
                 else:
-                    st.error("מלא את כל השדות")
+                    hashed_pw = hash_password(new_pass)
+                    add_row_to_sheet("pending_users", [new_email, hashed_pw, full_name, str(datetime.now())])
+                    st.success("הבקשה נשלחה לאישור מנהל.")
 
-# --- האפליקציה הראשית ---
+# --- אפליקציה ראשית ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
@@ -175,22 +210,21 @@ def main_app():
     st.title("📦 ניהול ספקים")
     df_suppliers, _ = get_worksheet_data("suppliers")
 
-    # --- ממשק מנהל ---
     if user_role == 'admin':
         st.sidebar.header("ניהול")
-        admin_action = st.sidebar.radio("פעולות:", 
-            ["צפייה בספקים", "אישור ספקים", "אישור משתמשים", "הוספה/יבוא", "מחיקת ספק"])
+        admin_action = st.sidebar.radio("פעולות:", ["צפייה בספקים", "אישור ספקים", "אישור משתמשים", "הוספה/יבוא", "מחיקת ספק"])
         
-        if admin_action == "אישור משתמשים":
-            st.subheader("אישור משתמשים חדשים")
+        if admin_action == "צפייה בספקים":
+            show_suppliers_table(df_suppliers)
+
+        elif admin_action == "אישור משתמשים":
+            st.subheader("אישור משתמשים")
             df_pending, _ = get_worksheet_data("pending_users")
             if not df_pending.empty:
                 for idx, row in df_pending.iterrows():
-                    # מציגים רק את השם, הסיסמה כבר מוצפנת ואין טעם להציג אותה
                     st.info(f"בקשה: {row['name']} ({row['username']})")
                     c1, c2 = st.columns([1,4])
                     if c1.button("אשר", key=f"ok_{idx}"):
-                        # מעבירים את הסיסמה המוצפנת כמו שהיא לטבלה הראשית
                         add_row_to_sheet("users", [row['username'], row['password'], 'user', row['name']])
                         delete_row_from_sheet("pending_users", "username", row['username'])
                         st.success("אושר!")
@@ -202,144 +236,78 @@ def main_app():
             else:
                 st.write("אין בקשות.")
 
-        # שאר הפונקציות של המנהל (ספקים, יבוא וכו') נשארות זהות לקוד הקודם...
-        # (כדי לחסוך מקום לא העתקתי שוב את כל הלוגיקה של הספקים, תעתיק מהקוד הקודם את ה-elif האחרים)
-        elif admin_action == "צפייה בספקים":
-             show_suppliers_table(df_suppliers)
-             
-        # ... המשך הקוד של המנהל (אותו דבר כמו בתשובה הקודמת)
+        elif admin_action == "אישור ספקים":
+            st.subheader("אישור ספקים חדשים")
+            df_pending_supp, _ = get_worksheet_data("pending_suppliers")
+            if not df_pending_supp.empty:
+                for idx, row in df_pending_supp.iterrows():
+                    with st.expander(f"{row['שם הספק']} (מאת {row['נוסף על ידי']})"):
+                        st.write(f"{row['תחום עיסוק']} | {row['טלפון']}")
+                        c1, c2 = st.columns(2)
+                        if c1.button("אשר", key=f"app_s_{idx}"):
+                            add_row_to_sheet("suppliers", [row['שם הספק'], row['תחום עיסוק'], row['טלפון'], row['כתובת'], row['תנאי תשלום'], row['נוסף על ידי']])
+                            delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
+                            st.success("אושר!")
+                            st.rerun()
+                        if c2.button("מחק", key=f"rej_s_{idx}"):
+                            delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
+                            st.rerun()
+            else:
+                st.write("אין ספקים בהמתנה.")
+
+        elif admin_action == "הוספה/יבוא":
+            st.subheader("הוספת ספק (מנהל)")
+            type_add = st.radio("סוג", ["ידני", "אקסל"], horizontal=True)
+            if type_add == "ידני":
+                with st.form("admin_add"):
+                    name = st.text_input("שם")
+                    field = st.text_input("תחום")
+                    phone = st.text_input("טלפון")
+                    addr = st.text_input("כתובת")
+                    pay = st.selectbox("תשלום", ["שוטף+30", "שוטף+60", "שוטף+90", "מזומן", "אשראי"])
+                    if st.form_submit_button("הוסף"):
+                        add_row_to_sheet("suppliers", [name, field, phone, addr, pay, user_name])
+                        st.success("נוסף!")
+            else:
+                uploaded = st.file_uploader("קובץ אקסל")
+                if uploaded and st.button("טען"):
+                    d = pd.read_excel(uploaded).astype(str)
+                    client = get_client()
+                    sheet = client.open(SHEET_NAME).worksheet("suppliers")
+                    sheet.append_rows(d.values.tolist())
+                    st.success("נטען!")
+
+        elif admin_action == "מחיקת ספק":
+            supp_del = st.selectbox("בחר למחיקה", df_suppliers['שם הספק'].unique() if not df_suppliers.empty else [])
+            if st.button("מחק"):
+                delete_row_from_sheet("suppliers", "שם הספק", supp_del)
+                st.success("נמחק")
+                time.sleep(0.5)
+                st.rerun()
 
     else:
-        # ממשק משתמש רגיל (נשאר אותו דבר)
+        # ממשק משתמש רגיל
         tab_view, tab_add = st.tabs(["צפייה", "הוספה"])
         with tab_view:
             show_suppliers_table(df_suppliers)
         with tab_add:
-            # טופס הוספה (אותו דבר כמו בתשובה הקודמת)
-            st.write("טופס הוספת ספק...")
+            st.subheader("הצעת ספק חדש")
+            with st.form("user_add"):
+                name = st.text_input("שם")
+                field = st.text_input("תחום")
+                phone = st.text_input("טלפון")
+                addr = st.text_input("כתובת")
+                pay = st.selectbox("תשלום", ["שוטף+30", "שוטף+60", "שוטף+90", "מזומן", "אשראי"])
+                if st.form_submit_button("שלח לאישור"):
+                    add_row_to_sheet("pending_suppliers", [name, field, phone, addr, pay, user_name, str(datetime.now())])
+                    st.success("נשלח לאישור.")
 
-# --- פונקציה מעודכנת להצגת טבלה מימין לשמאל ---
-def show_suppliers_table(df):
-    st.subheader("רשימת ספקים")
-    search = st.text_input("חיפוש חופשי...", "")
-    
-    if not df.empty:
-        # סינון הנתונים
-        if search:
-            df = df[
-                df['שם הספק'].astype(str).str.contains(search, case=False, na=False) |
-                df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
-            ]
-        
-        # --- חלק 1: עיצוב CSS ---
-        st.markdown("""
-        <style>
-            /* טבלה למחשב */
-            .rtl-table {
-                width: 100%;
-                border-collapse: collapse;
-                direction: rtl;
-            }
-            .rtl-table th {
-                background-color: #f0f2f6;
-                text-align: right;
-                padding: 10px;
-                border-bottom: 2px solid #ddd;
-                color: #333;
-            }
-            .rtl-table td {
-                text-align: right;
-                padding: 10px;
-                border-bottom: 1px solid #eee;
-                color: #333;
-            }
-            
-            /* כרטיסיות לנייד */
-            .mobile-card {
-                background-color: white;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                margin-bottom: 12px;
-                padding: 10px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-                direction: rtl;
-                text-align: right;
-            }
-            .mobile-card summary {
-                font-weight: bold;
-                cursor: pointer;
-                color: #000;
-                list-style: none; /* הסתרת המשולש בחלק מהדפדפנים */
-                outline: none;
-            }
-            /* טריק להוספת פלוס/מינוס לכרטיסייה */
-            .mobile-card summary::after {
-                content: "+"; 
-                float: left; 
-                font-weight: bold;
-            }
-            .mobile-card details[open] summary::after {
-                content: "-";
-            }
-            
-            .mobile-card .card-content {
-                margin-top: 10px;
-                padding-top: 10px;
-                border-top: 1px solid #eee;
-                font-size: 0.95em;
-                color: #333;
-            }
-            .mobile-card a {
-                color: #0068c9;
-                text-decoration: none;
-                font-weight: bold;
-            }
-
-            /* הגדרות תצוגה (רספונסיביות) */
-            .desktop-view { display: block; }
-            .mobile-view { display: none; }
-
-            @media only screen and (max-width: 768px) {
-                .desktop-view { display: none; }
-                .mobile-view { display: block; }
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # --- חלק 2: יצירת ה-HTML ---
-        
-        # טבלה למחשב
-        table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
-        
-        # כרטיסיות לנייד
-        cards = []
-        for _, row in df.iterrows():
-            # בניית הכרטיסייה ללא ירידת שורה כדי למנוע תקלות תצוגה
-            card = f"""<div class="mobile-card"><details><summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
-            cards.append(card)
-        
-        all_cards = "".join(cards)
-
-        # --- חלק 3: הצגה ---
-        final_html = f"""
-        <div class="desktop-view">{table_html}</div>
-        <div class="mobile-view">{all_cards}</div>
-        """
-        
-        # ניקוי סופי של תווים שעלולים לשבש את התצוגה
-        st.markdown(final_html, unsafe_allow_html=True)
-
-    else:
-        st.info("אין נתונים להצגה")
 # --- הרצה ---
 set_rtl_css()
-if not st.session_state.get('logged_in', False):
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+
+if not st.session_state['logged_in']:
     login_page()
 else:
     main_app()
-
-
-
-
-
-
