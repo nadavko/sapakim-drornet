@@ -205,29 +205,27 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # --- חלק 1: הזרקת ה-CSS (עיצוב) בנפרד ---
-        # שמים את זה בנפרד כדי שהסוגריים של ה-CSS לא יבלבלו את הפייתון
+        # --- חלק 1: הזרקת ה-CSS ---
         st.markdown("""
         <style>
-            /* עיצוב כללי לטבלה בעברית */
+            /* עיצוב טבלה למחשב */
             .rtl-table {
                 width: 100%;
                 border-collapse: collapse;
                 direction: rtl;
-                margin-bottom: 20px;
             }
             .rtl-table th {
                 background-color: #f0f2f6;
-                color: #31333F;
                 text-align: right;
-                padding: 12px;
+                padding: 10px;
                 border-bottom: 2px solid #ddd;
+                color: #000;
             }
             .rtl-table td {
                 text-align: right;
                 padding: 10px;
                 border-bottom: 1px solid #eee;
-                color: #31333F;
+                color: #000;
             }
             
             /* עיצוב כרטיסיות לנייד */
@@ -235,25 +233,25 @@ def show_suppliers_table(df):
                 background-color: white;
                 border: 1px solid #e0e0e0;
                 border-radius: 8px;
-                margin-bottom: 12px;
-                padding: 4px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                margin-bottom: 10px;
+                padding: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
                 direction: rtl;
                 text-align: right;
             }
             .mobile-card summary {
-                padding: 12px;
-                cursor: pointer;
                 font-weight: bold;
-                background-color: #fafafa;
-                border-radius: 8px;
+                cursor: pointer;
                 list-style: none;
+                margin-bottom: 5px;
+                color: #000;
             }
             .mobile-card .card-content {
-                padding: 12px;
+                margin-top: 5px;
+                padding-top: 5px;
                 border-top: 1px solid #eee;
-                font-size: 0.95em;
-                line-height: 1.6;
+                font-size: 0.9em;
+                color: #333;
             }
             .mobile-card a {
                 color: #0068c9;
@@ -261,13 +259,10 @@ def show_suppliers_table(df):
                 font-weight: bold;
             }
 
-            /* --- מנגנון ההסתרה (רספונסיביות) --- */
-            
-            /* ברירת מחדל: מחשב */
+            /* --- הסתרה והצגה לפי גודל מסך --- */
             .desktop-view { display: block; }
             .mobile-view { display: none; }
 
-            /* מסכים קטנים: נייד */
             @media only screen and (max-width: 768px) {
                 .desktop-view { display: none; }
                 .mobile-view { display: block; }
@@ -275,35 +270,38 @@ def show_suppliers_table(df):
         </style>
         """, unsafe_allow_html=True)
 
-        # --- חלק 2: יצירת ה-HTML של הטבלה (למחשב) ---
+        # --- חלק 2: בניית ה-HTML (ללא רווחים מיותרים!) ---
+        
+        # טבלה למחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # --- חלק 3: יצירת ה-HTML של הכרטיסיות (לנייד) ---
+        # כרטיסיות לנייד
         cards_html_content = ""
         for _, row in df.iterrows():
+            # שים לב: הכל בשורה אחת או צמוד לשמאל כדי למנוע זיהוי כ"קוד"
             cards_html_content += f"""
-            <div class="mobile-card">
-                <details>
-                    <summary>{row['שם הספק']} <span style="font-weight:normal; color:#666;">| {row['תחום עיסוק']}</span></summary>
-                    <div class="card-content">
-                        <div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
-                        <div><strong>כתובת:</strong> {row['כתובת']}</div>
-                        <div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
-                    </div>
-                </details>
-            </div>
-            """
+<div class="mobile-card">
+<details>
+<summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary>
+<div class="card-content">
+<div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
+<div><strong>כתובת:</strong> {row['כתובת']}</div>
+<div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
+</div>
+</details>
+</div>"""
 
-        # --- חלק 4: הדפסה למסך ---
-        # מחברים את הכל ומדפיסים עם הרשאה ל-HTML
-        st.markdown(f"""
-        <div class="desktop-view">
-            {table_html}
-        </div>
-        <div class="mobile-view">
-            {cards_html_content}
-        </div>
-        """, unsafe_allow_html=True)
+        # --- חלק 3: הצגה סופית ---
+        # גם כאן, חשוב שה-divים יהיו צמודים לשמאל
+        final_html = f"""
+<div class="desktop-view">
+{table_html}
+</div>
+<div class="mobile-view">
+{cards_html_content}
+</div>
+"""
+        st.markdown(final_html, unsafe_allow_html=True)
 
     else:
         st.info("אין נתונים להצגה")
@@ -313,6 +311,7 @@ if not st.session_state.get('logged_in', False):
     login_page()
 else:
     main_app()
+
 
 
 
