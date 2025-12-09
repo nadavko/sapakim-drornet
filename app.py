@@ -21,35 +21,54 @@ def check_password(plain_text_password, hashed_password):
     except ValueError:
         return False
 
-# --- עיצוב לימין (RTL) - תיקון שמונע את הקו החוצה ---
+# --- פונקציית עיצוב אגרסיבית (RTL Force) ---
 def set_rtl_css():
     st.markdown("""
     <style>
-        /* יישור טקסטים וכותרות לימין */
-        h1, h2, h3, h4, h5, h6, p, .stMarkdown, .stButton, .stAlert {
-            text-align: right !important;
+        /* כפייה של כיוון ימין-שמאל על כל האפליקציה */
+        .stApp {
             direction: rtl;
+            text-align: right;
         }
-        
-        /* יישור שדות קלט */
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
+
+        /* יישור כל הטקסטים (כולל כותרות, פסקאות, כפתורים) */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox {
+            text-align: right !important;
+        }
+
+        /* טיפול ספציפי בקלטים (Inputs) כדי שלא יכתבו הפוך */
+        .stTextInput > div > div > input {
+            direction: rtl;
+            text-align: right;
+        }
+        .stTextArea > div > div > textarea {
             direction: rtl;
             text-align: right;
         }
         
+        /* סידור התיבה של ה-Selectbox */
+        .stSelectbox > div > div {
+            direction: rtl;
+            text-align: right;
+        }
+
         /* יישור התפריט הצידי */
         [data-testid="stSidebar"] {
-            text-align: right;
             direction: rtl;
+            text-align: right;
         }
         
-        /* יישור כפתורי רדיו וצ'קבוקס */
+        /* תיקון כפתורי רדיו וצ'קבוקס */
         .stRadio, .stCheckbox {
             direction: rtl;
             text-align: right;
         }
-        
-        /* הסתרת כפתורי ניהול מיותרים של הטבלה */
+        .stRadio > div {
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+        }
+
+        /* הסתרת כפתורי עריכה קטנים של טבלאות */
         [data-testid="stElementToolbar"] {
             display: none;
         }
@@ -87,7 +106,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- תצוגת טבלה חכמה (רספונסיבית) ---
+# --- תצוגת טבלה (מתוקנת עיצובית) ---
 def show_suppliers_table(df):
     st.subheader("רשימת ספקים")
     search = st.text_input("חיפוש חופשי...", "")
@@ -99,20 +118,69 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # 1. עיצוב CSS
+        # 1. עיצוב CSS פנימי לטבלה
         st.markdown("""
         <style>
-            /* מחשב */
-            .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; }
-            .rtl-table th { background-color: #f0f2f6; text-align: right; padding: 10px; border-bottom: 2px solid #ddd; color: #333; }
-            .rtl-table td { text-align: right; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
+            /* טבלת מחשב */
+            .rtl-table { 
+                width: 100%; 
+                border-collapse: collapse; 
+                direction: rtl; 
+                margin-top: 10px;
+            }
+            .rtl-table th { 
+                background-color: #f0f2f6; 
+                text-align: right !important; 
+                padding: 10px; 
+                border-bottom: 2px solid #ddd; 
+                color: #333; 
+                font-weight: bold;
+            }
+            .rtl-table td { 
+                text-align: right !important; 
+                padding: 10px; 
+                border-bottom: 1px solid #eee; 
+                color: #333; 
+            }
             
-            /* נייד */
-            .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right; }
-            .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; }
-            .mobile-card summary::after { content: "+"; float: left; font-weight: bold; }
-            .mobile-card details[open] summary::after { content: "-"; }
-            .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
+            /* כרטיסיות נייד */
+            .mobile-card { 
+                background-color: white; 
+                border: 1px solid #ddd; 
+                border-radius: 8px; 
+                margin-bottom: 12px; 
+                padding: 10px; 
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+                direction: rtl; 
+                text-align: right !important; 
+            }
+            .mobile-card summary { 
+                font-weight: bold; 
+                cursor: pointer; 
+                color: #000; 
+                list-style: none; 
+                outline: none;
+                display: flex;
+                justify-content: space-between; /* מפזר את הפלוס והטקסט */
+                align-items: center;
+            }
+            /* סימן הפלוס בצד שמאל */
+            .mobile-card summary::after { 
+                content: "+"; 
+                font-size: 1.2em;
+                margin-right: 10px;
+            }
+            .mobile-card details[open] summary::after { 
+                content: "-"; 
+            }
+            
+            .mobile-card .card-content { 
+                margin-top: 10px; 
+                padding-top: 10px; 
+                border-top: 1px solid #eee; 
+                font-size: 0.95em; 
+                color: #333; 
+            }
             .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
 
             /* שליטה בתצוגה */
@@ -125,13 +193,13 @@ def show_suppliers_table(df):
         </style>
         """, unsafe_allow_html=True)
 
-        # 2. יצירת HTML למחשב
+        # 2. HTML למחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # 3. יצירת HTML לנייד (בנייה שטוחה למניעת שגיאות)
+        # 3. HTML לנייד
         cards = []
         for _, row in df.iterrows():
-            card = f"""<div class="mobile-card"><details><summary>{row['שם הספק']} | {row['תחום עיסוק']}</summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
+            card = f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
             cards.append(card)
         all_cards = "".join(cards)
 
@@ -146,7 +214,6 @@ def show_suppliers_table(df):
 def login_page():
     st.title("🔐 כניסה למערכת")
     
-    # כלי עזר למנהל (זמני)
     with st.expander("כלי למנהל: יצירת Hash לסיסמה"):
         pass_to_hash = st.text_input("הכנס סיסמה להצפנה")
         if st.button("הצפן"):
