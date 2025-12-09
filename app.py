@@ -21,40 +21,47 @@ def check_password(plain_text_password, hashed_password):
     except ValueError:
         return False
 
-# --- עיצוב לימין (RTL) - הגרסה הבטוחה ---
-# מונע את הפס האפור בטלפון על ידי הימנעות מהפעלת RTL על כל ה-App
+# --- עיצוב לימין (RTL) - הגרסה המלאה והמתוקנת ---
 def set_rtl_css():
     st.markdown("""
     <style>
-        /* 1. משאירים את המעטפת הראשית LTR כדי שהתפריטים לא ישברו */
+        /* 1. הופכים את הכיוון הראשי של האפליקציה (כדי שהתפריט יהיה בימין) */
         .stApp {
-            direction: ltr;
-        }
-
-        /* 2. הופכים רק את אזור התוכן הראשי */
-        .main .block-container {
             direction: rtl;
             text-align: right;
         }
 
-        /* 3. הופכים את התוכן של הסרגל הצידי */
-        [data-testid="stSidebar"] {
-            direction: rtl;
-            text-align: right;
+        /* 2. תיקון קריטי לנייד: הסתרת "ידית הגרירה" שיוצרת את הקו האפור באמצע המסך */
+        [data-testid="stSidebarResizeHandle"] {
+            display: none;
         }
-        
-        /* 4. יישור כותרות וטקסטים */
-        h1, h2, h3, h4, h5, h6, p, .stMarkdown, .stButton, .stAlert {
+
+        /* 3. יישור טקסטים גורף לימין (כולל מסך הכניסה) */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox {
             text-align: right !important;
         }
+
+        /* 4. סידור הלשוניות (Tabs) במסך הכניסה שיהיו מימין לשמאל */
+        .stTabs [data-baseweb="tab-list"] {
+            flex-direction: row-reverse;
+            justify-content: flex-end;
+        }
         
-        /* 5. יישור שדות קלט */
+        /* 5. יישור שדות קלט (שלא יכתבו הפוך) */
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
             direction: rtl;
             text-align: right;
         }
         
-        /* 6. יישור כפתורי רדיו וצ'קבוקס */
+        /* 6. התאמת התפריט הצידי */
+        [data-testid="stSidebar"] {
+            direction: rtl;
+            text-align: right;
+            border-right: none; /* ביטול קו בצד ימין */
+            border-left: 1px solid #f0f2f6; /* העברת הקו לצד שמאל */
+        }
+        
+        /* 7. כפתורי רדיו וצ'קבוקס */
         .stRadio, .stCheckbox {
             direction: rtl;
             text-align: right;
@@ -64,7 +71,7 @@ def set_rtl_css():
             justify-content: flex-end;
         }
         
-        /* הסתרת סרגל כלים מיותר של אלמנטים */
+        /* הסתרת סרגל כלים של אלמנטים */
         [data-testid="stElementToolbar"] {
             display: none;
         }
@@ -102,7 +109,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- תצוגת טבלה חכמה ---
+# --- תצוגת טבלה (רספונסיבית ונקייה) ---
 def show_suppliers_table(df):
     st.subheader("רשימת ספקים")
     search = st.text_input("חיפוש חופשי...", "")
@@ -143,14 +150,14 @@ def show_suppliers_table(df):
         # 2. HTML מחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # 3. HTML נייד (בנייה "שטוחה" למניעת תקלות)
+        # 3. HTML נייד (בנייה שטוחה)
         cards = []
         for _, row in df.iterrows():
             card = f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>כתובת:</strong> {row['כתובת']}</div><div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div></div></details></div>"""
             cards.append(card)
         all_cards = "".join(cards)
 
-        # 4. הדפסה (כולל ניקוי רווחים)
+        # 4. הדפסה (עם ניקוי רווחים למניעת שגיאות תצוגה)
         final_html = f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{all_cards}</div>"""
         st.markdown(final_html.replace('\n', ' '), unsafe_allow_html=True)
 
@@ -216,6 +223,7 @@ def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
     
+    # תפריט צד
     st.sidebar.markdown(f"**שלום {user_name}**")
     if st.sidebar.button("יציאה"):
         st.session_state['logged_in'] = False
