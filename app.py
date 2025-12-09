@@ -8,7 +8,7 @@ import bcrypt
 import re
 import io
 
-# --- 1. הגדרת עמוד (חובה שורה ראשונה) ---
+# --- 1. הגדרת עמוד ---
 st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
 
 # --- 2. הגדרות וחיבורים ---
@@ -46,11 +46,9 @@ def check_duplicate_supplier(df, name, phone, email):
     return False, ""
 
 def generate_excel_template():
-    # יצירת תבנית עם המנוע openpyxl שכבר מותקן אצלך
     columns = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום']
     df = pd.DataFrame(columns=columns)
     buffer = io.BytesIO()
-    # שינוי קריטי: שימוש ב-openpyxl במקום xlsxwriter
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return buffer
@@ -81,7 +79,7 @@ def set_css():
             flex-direction: row-reverse; justify-content: flex-end; 
         }
         
-        /* טבלת מנהל */
+        /* טבלת מחיקה (Data Editor) */
         [data-testid="stDataEditor"] { direction: rtl; }
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
@@ -94,7 +92,7 @@ def set_css():
             direction: rtl;
         }
 
-        /* טבלת HTML למשתמש */
+        /* טבלת HTML (צפייה רגילה) */
         .rtl-table { 
             width: 100%; 
             border-collapse: collapse; 
@@ -125,6 +123,7 @@ def set_css():
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
+        /* טולטיפ מחוברים */
         .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
         .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
         .online-list { visibility: hidden; opacity: 0; position: absolute; bottom: 45px; left: 0; background-color: white; color: #333; min-width: 180px; padding: 10px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #eee; transition: all 0.2s ease-in-out; text-align: right; font-size: 0.85em; }
@@ -252,27 +251,30 @@ def confirm_bulk_delete(suppliers_to_delete):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- 7. טבלת מנהל (תיקון סדר עמודות) ---
-def show_admin_table_with_checkboxes(df, all_fields_list):
+# --- 7. טבלת מחיקה למנהל (טאב נפרד) ---
+def show_delete_interface(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
-    with c_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
-    with c_filter: cat = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
+    with c_search: search = st.text_input("🔍 חיפוש למחיקה", "")
+    with c_filter: cat = st.selectbox("📂 סינון למחיקה", ["הכל"] + all_fields_list)
 
     if not df.empty:
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # --- תיקון סדר העמודות ---
-        # שם הספק צריך להיות ראשון כדי שיופיע בימין ב-RTL
-        # מחיקה צריך להיות אחרון כדי שיופיע בשמאל ב-RTL
+        # כאן אנחנו משתמשים ב-DataEditor רק לצורך מחיקה
+        # נסדר עמודות כך ששם הספק יהיה בקצה (ימין/שמאל בהתאם ל-RTL)
+        # ונוסיף צ'קבוקס
+        
+        # כדי שזה יראה טוב ב-RTL (מחיקה משמאל, שם מימין), צריך להפוך סדר:
+        # עמודה 0 = מחיקה (תופיע משמאל)
+        # עמודה אחרונה = שם הספק (יופיע מימין)
         cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in cols_order if c in df.columns]
         df_disp = df[final_cols].copy()
         
-        # הוספת מחיקה בסוף
         df_disp["מחיקה?"] = False
 
-        st.write("סמן בתיבה את הספקים למחיקה:")
+        st.warning("זהירות: אזור מחיקה")
         
         edited_df = st.data_editor(
             df_disp,
@@ -280,12 +282,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
                 "מחיקה?": st.column_config.CheckboxColumn("מחק", default=False, width="small"),
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
-                "טלפון": st.column_config.TextColumn(disabled=True),
-                "אימייל": st.column_config.TextColumn(disabled=True),
-                "כתובת": st.column_config.TextColumn(disabled=True),
-                "שם איש קשר": st.column_config.TextColumn(disabled=True),
-                "תנאי תשלום": st.column_config.TextColumn(disabled=True),
-                "נוסף על ידי": st.column_config.TextColumn(disabled=True),
+                # הסתרת חלק מהעמודות בטאב המחיקה כדי שלא יהיה עמוס, אם תרצה
             },
             hide_index=True,
             use_container_width=True
@@ -293,12 +290,11 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
 
         sel = edited_df[edited_df["מחיקה?"] == True]
         if not sel.empty:
-            st.warning(f"נבחרו {len(sel)} למחיקה.")
-            if st.button("🗑️ מחק מסומנים", type="primary"):
+            if st.button(f"🗑️ מחק {len(sel)} ספקים מסומנים", type="primary"):
                 confirm_bulk_delete(sel["שם הספק"].tolist())
     else: st.info("אין נתונים")
 
-# --- 8. טבלת משתמש (HTML שטוח) ---
+# --- 8. טבלת צפייה (משותפת למנהל ולמשתמש) ---
 def show_suppliers_table(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
     with c_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -311,17 +307,15 @@ def show_suppliers_table(df, all_fields_list):
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         df_final = df[[c for c in cols if c in df.columns]]
         
-        # HTML מחשב ללא רווחים
+        # HTML מחשב - נקי, ללא רווחים
         table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
         
-        # HTML טלפון
-        cards_html_list = []
+        # HTML טלפון - שורה אחת
+        cards_html = ""
         for _, row in df.iterrows():
-            card = f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
-            cards_html_list.append(card)
-        cards_html_full = "".join(cards_html_list)
+            cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
 
-        st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html_full}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html}</div>', unsafe_allow_html=True)
     else: st.info("אין נתונים")
 
 # --- 9. דף כניסה ---
@@ -397,7 +391,7 @@ def main_app():
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
         my_rejections = pd.DataFrame() 
         if not df_rejected.empty:
-            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rejected['נוסף על ידי'].astype(str).str.contains(current_user_email, na=False)
+            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False)
             my_rejections = df_rejected[mask]
         if not my_rejections.empty:
             st.error(f"יש {len(my_rejections)} ספקים שנדחו.")
@@ -412,10 +406,13 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        # סדר טאבים חדש - מחיקה בסוף
+        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא", "🗑️ מחיקת ספקים"])
         
-        with tabs[0]: show_admin_table_with_checkboxes(df_suppliers, fields_list)
+        # 1. טבלת צפייה רגילה (כמו משתמש)
+        with tabs[0]: show_suppliers_table(df_suppliers, fields_list)
         
+        # 2. אישור ספקים
         with tabs[1]:
             if c_supp > 0:
                 for idx, row in df_pend_supp.iterrows():
@@ -555,6 +552,10 @@ def main_app():
                             time.sleep(2)
                             st.rerun()
                 except Exception as e: st.error(f"שגיאה: {e}")
+
+        # 7. טאב חדש למחיקה
+        with tabs[6]:
+            show_delete_interface(df_suppliers, fields_list)
 
     else:
         user_tabs = st.tabs(["🔎 חיפוש", "➕ הצעה"])
