@@ -192,9 +192,64 @@ def main_app():
             # טופס הוספה (אותו דבר כמו בתשובה הקודמת)
             st.write("טופס הוספת ספק...")
 
+# --- פונקציה מעודכנת להצגת טבלה מימין לשמאל ---
 def show_suppliers_table(df):
-    # אותה פונקציה מהקוד הקודם
-    st.dataframe(df, use_container_width=True)
+    st.subheader("רשימת ספקים")
+    search = st.text_input("חיפוש חופשי...", "")
+    
+    if not df.empty:
+        # סינון הנתונים
+        if search:
+            df = df[
+                df['שם הספק'].astype(str).str.contains(search, case=False, na=False) |
+                df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
+            ]
+        
+        # --- השינוי המרכזי: המרה ל-HTML כדי לשלוט בכיוון ---
+        # הסתרת האינדקס (המספר 0 בצד) כי זה פחות רלוונטי למשתמש
+        html_table = df.to_html(index=False, classes='rtl-table', border=0)
+        
+        # הוספת עיצוב CSS ספציפי לטבלה הזו
+        st.markdown("""
+        <style>
+            .rtl-table {
+                width: 100%;
+                border-collapse: collapse;
+                direction: rtl; /* כיוון הטבלה */
+            }
+            .rtl-table th {
+                background-color: #f0f2f6;
+                color: #31333F;
+                text-align: right; /* יישור כותרות לימין */
+                padding: 10px;
+                border-bottom: 2px solid #ddd;
+                font-weight: bold;
+            }
+            .rtl-table td {
+                text-align: right; /* יישור תוכן לימין */
+                padding: 10px;
+                border-bottom: 1px solid #eee;
+                color: #31333F;
+            }
+            .rtl-table tr:hover {
+                background-color: #f9f9f9; /* אפקט ריחוף עדין */
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # הצגת הטבלה
+        st.markdown(html_table, unsafe_allow_html=True)
+        
+        # כרטיסיות לנייד (נשאר אותו דבר)
+        st.markdown("### 📱 כרטיסיות (לנייד)")
+        for _, row in df.iterrows():
+            with st.expander(f"{row['שם הספק']} - {row['תחום עיסוק']}"):
+                st.write(f"📞 {row['טלפון']}")
+                st.write(f"📍 {row['כתובת']}")
+                st.write(f"💳 {row['תנאי תשלום']}")
+                st.markdown(f"[חייג לספק](tel:{row['טלפון']})")
+    else:
+        st.info("אין נתונים להצגה")
 
 # --- הרצה ---
 set_rtl_css()
@@ -202,3 +257,4 @@ if not st.session_state.get('logged_in', False):
     login_page()
 else:
     main_app()
+
