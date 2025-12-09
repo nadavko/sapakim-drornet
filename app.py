@@ -11,7 +11,7 @@ import re
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SHEET_NAME = "ניהול ספקים"
 
-# --- פונקציות עזר ---
+# --- פונקציות עזר וולידציה ---
 def hash_password(password):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     return hashed.decode('utf-8')
@@ -46,23 +46,29 @@ def set_css():
     st.markdown("""
     <style>
         .stApp { direction: rtl; text-align: right; }
+        
+        /* יישור כללי לימין */
         h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
+        /* טבלה רגילה למשתמש */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
 
+        /* כרטיסיות מובייל */
         .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right !important; }
         .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
         .mobile-card summary::after { content: "+"; font-size: 1.2em; margin-right: 10px; color: #666; }
         .mobile-card details[open] summary::after { content: "-"; }
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
-
+        
+        /* מונה משתמשים */
         .online-counter { position: fixed; bottom: 10px; left: 10px; background-color: #4CAF50; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.8em; z-index: 9999; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
 
+        /* הגדרות רספונסיביות */
         .desktop-view { display: block; }
         .mobile-view { display: none; }
         @media only screen and (max-width: 768px) {
@@ -93,6 +99,7 @@ def get_worksheet_data(worksheet_name):
 # --- ניהול משתמשים מחוברים ---
 def update_active_user(username):
     current_time = datetime.now()
+    # עדכון פעם בדקה
     if 'last_api_update' in st.session_state:
         if (current_time - st.session_state['last_api_update']).seconds < 60:
             return
@@ -119,13 +126,14 @@ def get_online_users_count_and_names():
         for _, row in df.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
+                # מי שנראה ב-5 הדקות האחרונות
                 if (now - last_seen).total_seconds() < 300: 
                     active_names.append(row['username'])
             except: continue
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס ---
+# --- פעולות בסיס בגיליון ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -141,13 +149,30 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- הגדרות מנהל ---
+# --- הגדרות (רשימות) ---
 def get_settings_lists():
     df, _ = get_worksheet_data("settings")
     if df.empty: return [], []
     fields = [x for x in df['fields'].tolist() if x]
     payment_terms = [x for x in df['payment_terms'].tolist() if x]
     return fields, payment_terms
+
+def update_settings_list(column_name, new_list):
+    client = get_client()
+    sheet = client.open(SHEET_NAME).worksheet("settings")
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+    
+    other_col = 'payment_terms' if column_name == 'fields' else 'fields'
+    other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
+    
+    max_len = max(len(new_list), len(other_list))
+    new_list += [''] * (max_len - len(new_list))
+    other_list += [''] * (max_len - len(other_list))
+    
+    new_df = pd.DataFrame({column_name: new_list, other_col: other_list})
+    sheet.clear()
+    sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
 
 # --- מחיקה עם אישור ---
 @st.dialog("אישור מחיקה")
@@ -161,28 +186,52 @@ def confirm_delete_supplier(supplier_name):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- טבלאות ---
-def show_admin_table(df):
-    if df.empty:
-        st.info("אין נתונים")
-        return
-    cols = st.columns([3, 2, 2, 1])
-    cols[0].write("**שם**")
-    cols[1].write("**טלפון**")
-    cols[2].write("**תחום**")
-    cols[3].write("**מחיקה**")
-    st.markdown("---")
-    for _, row in df.iterrows():
-        c = st.columns([3, 2, 2, 1])
-        c[0].write(row['שם הספק'])
-        c[1].write(row['טלפון'])
-        c[2].write(row['תחום עיסוק'])
-        if c[3].button("🗑️", key=f"del_{row['שם הספק']}"):
-            confirm_delete_supplier(row['שם הספק'])
+# --- תצוגת טבלה למנהל (עם חיפוש, סינון, כל המידע ומחיקה) ---
+def show_admin_full_list(df, all_fields_list):
+    # אזור סינון וחיפוש (זהה למשתמש)
+    col_search, col_filter = st.columns([2, 1])
+    with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
+    with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
+    if not df.empty:
+        # לוגיקת סינון
+        if selected_category != "הכל":
+            df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
+        if search:
+            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        
+        # כותרות הטבלה
+        st.markdown("---")
+        # אנו בונים "טבלה" באמצעות עמודות של סטרימליט כדי לאפשר כפתור מחיקה
+        # אבל כדי שזה יראה טוב, נשתמש ב-Container לכל שורה
+        
+        # לולאה על הספקים והצגה
+        for idx, row in df.iterrows():
+            with st.container(border=True):
+                # חלוקה: רוב המקום למידע, קצת מקום לכפתור מחיקה
+                c_info, c_del = st.columns([9, 1])
+                
+                with c_info:
+                    # שימוש ב Markdown להצגת המידע בשורה/שורות יפות
+                    info_text = f"""
+                    **{row['שם הספק']}** | {row['תחום עיסוק']}
+                    📞 {row['טלפון']} | ✉️ {row.get('אימייל','')} | 👤 {row.get('שם איש קשר','')}
+                    📍 {row['כתובת']} | 💳 {row.get('תנאי תשלום','')} | ✍️ {row.get('נוסף על ידי','')}
+                    """
+                    st.markdown(info_text)
+                
+                with c_del:
+                    # כפתור מחיקה מיושר
+                    st.write("") # רווח קטן
+                    if st.button("🗑️", key=f"del_adm_{idx}"):
+                        confirm_delete_supplier(row['שם הספק'])
+    else:
+        st.info("אין נתונים.")
+
+# --- תצוגת טבלה למשתמש רגיל ---
 def show_suppliers_table(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
-    with col_search: search = st.text_input("🔍 חיפוש", "")
+    with col_search: search = st.text_input("🔍 חיפוש חופשי", "")
     with col_filter: selected_category = st.selectbox("📂 סינון", ["הכל"] + all_fields_list)
 
     if not df.empty:
@@ -193,8 +242,11 @@ def show_suppliers_table(df, all_fields_list):
         
         desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in desired_cols if c in df.columns]
+        
+        # HTML מחשב
         table_html = df[final_cols].to_html(index=False, classes='rtl-table', border=0, escape=False)
         
+        # HTML טלפון
         cards = []
         for _, row in df.iterrows():
             card = f"""
@@ -212,8 +264,10 @@ def show_suppliers_table(df, all_fields_list):
                 </details>
             </div>"""
             cards.append(card)
+        
         st.markdown(f"""<div class="desktop-view">{table_html}</div><div class="mobile-view">{"".join(cards)}</div>""", unsafe_allow_html=True)
-    else: st.info("אין נתונים")
+    else:
+        st.info("אין נתונים להצגה.")
 
 # --- דף כניסה ---
 def login_page():
@@ -263,7 +317,7 @@ def login_page():
                         add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
                         st.success("בקשה נשלחה")
 
-# --- ראשי ---
+# --- אפליקציה ראשית ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
@@ -282,10 +336,9 @@ def main_app():
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # הודעות
+    # הודעות דחייה
     with st.expander("📬 ההגשות שלי"):
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
-        # --- התיקון כאן: אתחול כ-DataFrame ריק ---
         my_rejections = pd.DataFrame() 
         if not df_rejected.empty:
             mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rejected['נוסף על ידי'].astype(str).str.contains(current_user_email, na=False)
@@ -305,10 +358,14 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        tabs = st.tabs(["📋 ספקים", f"⏳ ספקים ({c_supp})", f"👥 משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        # שמות טאבים מתוקנים
+        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        with tabs[0]: show_admin_table(df_suppliers)
+        # 1. רשימה + חיפוש + סינון + מחיקה
+        with tabs[0]:
+            show_admin_full_list(df_suppliers, fields_list)
         
+        # 2. אישור ספקים
         with tabs[1]:
             if c_supp > 0:
                 for idx, row in df_pend_supp.iterrows():
@@ -333,6 +390,7 @@ def main_app():
                             st.rerun()
             else: st.info("אין ספקים ממתינים")
 
+        # 3. אישור משתמשים
         with tabs[2]:
             if c_users > 0:
                 for idx, row in df_pend_users.iterrows():
@@ -347,6 +405,7 @@ def main_app():
                         st.rerun()
             else: st.info("אין משתמשים")
 
+        # 4. הוספה
         with tabs[3]:
             with st.form("adm_add"):
                 s_name = st.text_input("שם *")
@@ -369,7 +428,40 @@ def main_app():
                                 st.rerun()
                     else: st.error("חסרים פרטים")
         
-        with tabs[4]: st.info("ניהול רשימות (פונקציות קיימות)")
+        # 5. הגדרות (הוחזר)
+        with tabs[4]:
+            c_fields, c_terms = st.columns(2)
+            with c_fields:
+                st.write("**תחומי עיסוק**")
+                new_field = st.text_input("הוסף תחום")
+                if st.button("הוסף", key="add_f"):
+                    if new_field and new_field not in fields_list:
+                        fields_list.append(new_field)
+                        update_settings_list("fields", fields_list)
+                        st.rerun()
+                rem_field = st.selectbox("מחק תחום", [""] + fields_list, key="sel_rem_f")
+                if st.button("מחק", key="btn_rem_f"):
+                    if rem_field:
+                        fields_list.remove(rem_field)
+                        update_settings_list("fields", fields_list)
+                        st.rerun()
+
+            with c_terms:
+                st.write("**תנאי תשלום**")
+                new_term = st.text_input("הוסף תנאי")
+                if st.button("הוסף", key="add_t"):
+                    if new_term and new_term not in payment_list:
+                        payment_list.append(new_term)
+                        update_settings_list("payment_terms", payment_list)
+                        st.rerun()
+                rem_term = st.selectbox("מחק תנאי", [""] + payment_list, key="sel_rem_t")
+                if st.button("מחק", key="btn_rem_t"):
+                    if rem_term:
+                        payment_list.remove(rem_term)
+                        update_settings_list("payment_terms", payment_list)
+                        st.rerun()
+
+        # 6. יבוא
         with tabs[5]:
             up = st.file_uploader("Excel", type="xlsx")
             if up and st.button("טען"):
