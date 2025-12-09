@@ -98,21 +98,14 @@ def update_settings_list(column_name, new_list):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet("settings")
     
-    # קריאת כל הדאטה הקיים כדי לא למחוק את העמודה השנייה
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    
-    # עדכון העמודה הרלוונטית (חייבים לוודא שה-DataFrame בגודל המתאים)
-    # שיטה פשוטה יותר: נמחק הכל ונכתוב מחדש את שתי העמודות
-    # אבל כדי לא להסתבך עם סנכרון, נקרא את העמודה השנייה ונשמור אותה
     
     other_col = 'payment_terms' if column_name == 'fields' else 'fields'
     other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
     
-    # יצירת דאטה פריים חדש ומאוזן
+    # איזון אורכים
     max_len = max(len(new_list), len(other_list))
-    
-    # מילוי רשימות כדי שיהיו באותו אורך
     new_list += [''] * (max_len - len(new_list))
     other_list += [''] * (max_len - len(other_list))
     
@@ -136,7 +129,8 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
     data = sheet.get_all_records()
     for i, row in enumerate(data):
         if str(row[key_col]) == str(key_val):
-            sheet.delete_row(i + 2)
+            # --- התיקון נמצא כאן: delete_rows במקום delete_row ---
+            sheet.delete_rows(i + 2)
             return True
     return False
 
@@ -152,21 +146,24 @@ def show_suppliers_table(df):
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # HTML מחשב - הוספנו עמודות
+        # HTML מחשב
         table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # HTML טלפון - הוספנו שדות
+        # HTML טלפון
         cards = []
         for _, row in df.iterrows():
-            contact_info = f" ({row['שם איש קשר']})" if row['שם איש קשר'] else ""
+            # טיפול בערכים ריקים שאולי יגרמו לשגיאה
+            contact_name = row.get('שם איש קשר', '')
+            email = row.get('אימייל', '')
+            
             card = f"""
             <div class="mobile-card">
                 <details>
                     <summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary>
                     <div class="card-content">
-                        <div><strong>איש קשר:</strong> {row['שם איש קשר']}</div>
+                        <div><strong>איש קשר:</strong> {contact_name}</div>
                         <div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
-                        <div><strong>אימייל:</strong> <a href="mailto:{row['אימייל']}">{row['אימייל']}</a></div>
+                        <div><strong>אימייל:</strong> <a href="mailto:{email}">{email}</a></div>
                         <div><strong>כתובת:</strong> {row['כתובת']}</div>
                         <div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
                     </div>
@@ -252,35 +249,22 @@ def main_app():
     st.sidebar.subheader("➕ הוספת ספק")
     with st.sidebar.form("add_supplier_sidebar"):
         s_name = st.text_input("שם הספק *")
-        
-        # בחירה מרובה לתחומים
         s_fields = st.multiselect("תחומי עיסוק *", fields_list)
-        
         s_phone = st.text_input("טלפון *")
         s_email = st.text_input("אימייל *")
         s_contact = st.text_input("שם איש קשר (אופציונלי)")
         s_addr = st.text_input("כתובת *")
-        
-        # בחירה מרשימה לתנאי תשלום
         s_pay = st.selectbox("תנאי תשלום *", payment_list)
         
         if st.form_submit_button("הוסף"):
-            # בדיקת שדות חובה
             if s_name and s_fields and s_phone and s_email and s_addr and s_pay:
-                # המרת רשימת התחומים למחרוזת מופרדת בפסיקים לשמירה בגיליון
                 fields_str = ", ".join(s_fields)
-                
                 row_data = [s_name, fields_str, s_phone, s_addr, s_pay, s_email, s_contact, user_name]
                 
-                # אם מנהל - מוסיף תאריך אוטומטי במקום תאריך בקשה כי זה ישר מאושר? 
-                # למען הפשטות נשמור על המבנה. בטבלה הראשית אין עמודת תאריך, רק ב-pending.
-                
                 if user_role == 'admin':
-                    # סדר העמודות ב-suppliers: שם, תחום, טלפון, כתובת, תשלום, אימייל, איש קשר, נוסף ע"י
                     add_row_to_sheet("suppliers", row_data)
                     st.sidebar.success("נוסף בהצלחה!")
                 else:
-                    # סדר העמודות ב-pending: כנ"ל + תאריך
                     row_data.append(str(datetime.now()))
                     add_row_to_sheet("pending_suppliers", row_data)
                     st.sidebar.success("נשלח לאישור מנהל")
@@ -311,13 +295,12 @@ def main_app():
                 for idx, row in df_pend_supp.iterrows():
                     with st.sidebar.expander(f"{row['שם הספק']}"):
                         st.write(f"תחום: {row['תחום עיסוק']}")
-                        st.write(f"איש קשר: {row['שם איש קשר']}")
+                        st.write(f"איש קשר: {row.get('שם איש קשר', '')}")
                         if st.button("אשר", key=f"s_ok_{idx}"):
-                            # שימוש נכון בעמודות החדשות
                             add_row_to_sheet("suppliers", [
                                 row['שם הספק'], row['תחום עיסוק'], row['טלפון'], 
-                                row['כתובת'], row['תנאי תשלום'], row['אימייל'], 
-                                row['שם איש קשר'], row['נוסף על ידי']
+                                row['כתובת'], row['תנאי תשלום'], row.get('אימייל', ''), 
+                                row.get('שם איש קשר', ''), row['נוסף על ידי']
                             ])
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
                             st.rerun()
@@ -329,8 +312,6 @@ def main_app():
         
         elif admin_mode == "ניהול רשימות":
             st.sidebar.write("**עריכת רשימות בחירה**")
-            
-            # ניהול תחומי עיסוק
             with st.sidebar.expander("תחומי עיסוק"):
                 new_field = st.text_input("הוסף תחום חדש")
                 if st.button("הוסף תחום"):
@@ -338,7 +319,6 @@ def main_app():
                         fields_list.append(new_field)
                         update_settings_list("fields", fields_list)
                         st.rerun()
-                
                 field_to_remove = st.selectbox("מחק תחום קיים", [""] + fields_list)
                 if st.button("מחק תחום"):
                     if field_to_remove:
@@ -346,7 +326,6 @@ def main_app():
                         update_settings_list("fields", fields_list)
                         st.rerun()
 
-            # ניהול תנאי תשלום
             with st.sidebar.expander("תנאי תשלום"):
                 new_term = st.text_input("הוסף תנאי תשלום")
                 if st.button("הוסף תנאי"):
@@ -354,7 +333,6 @@ def main_app():
                         payment_list.append(new_term)
                         update_settings_list("payment_terms", payment_list)
                         st.rerun()
-                
                 term_to_remove = st.selectbox("מחק תנאי קיים", [""] + payment_list)
                 if st.button("מחק תנאי"):
                     if term_to_remove:
@@ -367,7 +345,6 @@ def main_app():
              if uploaded and st.sidebar.button("טען"):
                  try:
                      d = pd.read_excel(uploaded).astype(str)
-                     # כאן צריך לוודא שהאקסל תואם למבנה החדש, אבל כרגע נטען בסיסי
                      client = get_client()
                      sheet = client.open(SHEET_NAME).worksheet("suppliers")
                      sheet.append_rows(d.values.tolist())
