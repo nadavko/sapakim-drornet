@@ -6,6 +6,7 @@ from datetime import datetime
 import time
 import bcrypt
 import re
+import io # נדרש ליצירת קובץ התבנית להורדה
 
 # --- 1. הגדרת עמוד (חובה בשורה הראשונה) ---
 st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
@@ -30,19 +31,41 @@ def is_valid_email(email):
     return re.match(pattern, email) is not None
 
 def check_duplicate_supplier(df, name, phone, email):
+    """בדיקת כפילות מול דאטה-פריים קיים"""
     if df.empty:
         return False, ""
+    
+    # ניקוי והכנה להשוואה
     name = str(name).strip()
     phone = str(phone).strip()
     email = str(email).strip().lower()
     
-    if name in df['שם הספק'].astype(str).str.strip().values:
-        return True, f"ספק בשם '{name}' כבר קיים."
-    if phone in df['טלפון'].astype(str).str.strip().values:
-        return True, f"טלפון '{phone}' כבר קיים."
-    if email and email in df['אימייל'].astype(str).str.strip().str.lower().values:
-        return True, f"אימייל '{email}' כבר קיים."
+    # המרת עמודות ה-DF לסטרינג ונקיון רווחים להשוואה מדויקת
+    existing_names = df['שם הספק'].astype(str).str.strip().values
+    existing_phones = df['טלפון'].astype(str).str.strip().values
+    existing_emails = df['אימייל'].astype(str).str.strip().str.lower().values
+    
+    if name in existing_names:
+        return True, f"שם הספק '{name}' כבר קיים"
+    if phone in existing_phones:
+        return True, f"מספר הטלפון '{phone}' כבר קיים"
+    if email and email in existing_emails:
+        return True, f"כתובת האימייל '{email}' כבר קיימת"
+        
     return False, ""
+
+def generate_excel_template():
+    """יצירת קובץ אקסל ריק עם הכותרות הנכונות להורדה"""
+    columns = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום']
+    df = pd.DataFrame(columns=columns)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+        # התאמת רוחב עמודות לנוחות
+        worksheet = writer.sheets['Sheet1']
+        for i, col in enumerate(columns):
+            worksheet.set_column(i, i, 20)
+    return buffer
 
 # --- 4. CSS (עיצוב) ---
 def set_css():
@@ -51,7 +74,6 @@ def set_css():
         /* כיוון כללי RTL */
         .stApp { direction: rtl; text-align: right; }
         
-        /* התאמת הקונטיינר הראשי */
         .block-container {
             max-width: 100%;
             padding-top: 2rem;
@@ -60,7 +82,6 @@ def set_css():
             padding-bottom: 3rem;
         }
 
-        /* יישור אלמנטים לימין */
         h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
             text-align: right !important; 
         }
@@ -68,123 +89,43 @@ def set_css():
             direction: rtl; text-align: right; 
         }
         
-        /* טאבים בסדר הפוך */
         .stTabs [data-baseweb="tab-list"] { 
             flex-direction: row-reverse; justify-content: flex-end; 
         }
         
-        /* יישור טקסט בתוך Data Editor (טבלת מנהל) */
+        /* טבלת מנהל */
+        [data-testid="stDataEditor"] { direction: rtl; }
+        [data-testid="stDataEditor"] div[role="columnheader"] {
+            text-align: right !important;
+            justify-content: flex-start !important;
+            direction: rtl;
+        }
         [data-testid="stDataEditor"] div[role="gridcell"] {
             text-align: right !important;
             justify-content: flex-end !important;
-        }
-        [data-testid="stDataEditor"] div[role="columnheader"] {
-            text-align: right !important;
-            justify-content: flex-end !important;
+            direction: rtl;
         }
 
-        /* טבלה רגילה (HTML) למשתמש */
-        .rtl-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            direction: rtl; 
-            margin-top: 10px; 
-        }
-        .rtl-table th { 
-            background-color: #f0f2f6; 
-            text-align: right !important; 
-            padding: 10px; 
-            border-bottom: 2px solid #ddd; 
-            color: #333; 
-            font-weight: bold; 
-            white-space: nowrap; 
-        }
-        .rtl-table td { 
-            text-align: right !important; 
-            padding: 10px; 
-            border-bottom: 1px solid #eee; 
-            color: #333; 
-        }
+        /* טבלת HTML */
+        .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
+        .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
+        .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
 
-        /* כרטיסיות מובייל */
-        .mobile-card { 
-            background-color: white; 
-            border: 1px solid #ddd; 
-            border-radius: 8px; 
-            margin-bottom: 12px; 
-            padding: 10px; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
-            direction: rtl; 
-            text-align: right !important; 
-        }
-        .mobile-card summary { 
-            font-weight: bold; 
-            cursor: pointer; 
-            color: #000; 
-            list-style: none; 
-            outline: none; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }
+        /* מובייל */
+        .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right !important; }
+        .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
         .mobile-card summary::after { content: "+"; font-size: 1.2em; color: #666; margin-right: 10px;}
         .mobile-card details[open] summary::after { content: "-"; }
-        
-        .mobile-card .card-content { 
-            margin-top: 10px; 
-            padding-top: 10px; 
-            border-top: 1px solid #eee; 
-            font-size: 0.95em; 
-            color: #333; 
-        }
+        .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
-        /* מונה משתמשים ובועה (Tooltip) */
-        .online-container { 
-            position: fixed; 
-            bottom: 15px; 
-            left: 15px; 
-            z-index: 99999; 
-            direction: rtl; 
-            font-family: sans-serif; 
-        }
-        .online-badge { 
-            background-color: #4CAF50; 
-            color: white; 
-            padding: 8px 15px; 
-            border-radius: 50px; 
-            font-size: 0.9em; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3); 
-            cursor: default; 
-            font-weight: bold; 
-        }
-        .online-list {
-            visibility: hidden; 
-            opacity: 0; 
-            position: absolute; 
-            bottom: 45px; 
-            left: 0;
-            background-color: white; 
-            color: #333; 
-            min-width: 180px; 
-            padding: 10px;
-            border-radius: 8px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
-            border: 1px solid #eee;
-            transition: all 0.2s ease-in-out; 
-            text-align: right; 
-            font-size: 0.85em;
-        }
-        .online-container:hover .online-list { 
-            visibility: visible; 
-            opacity: 1; 
-            bottom: 50px; 
-        }
+        .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
+        .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
+        .online-list { visibility: hidden; opacity: 0; position: absolute; bottom: 45px; left: 0; background-color: white; color: #333; min-width: 180px; padding: 10px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #eee; transition: all 0.2s ease-in-out; text-align: right; font-size: 0.85em; }
+        .online-container:hover .online-list { visibility: visible; opacity: 1; bottom: 50px; }
 
-        /* רספונסיביות */
         .desktop-view { display: block; }
         .mobile-view { display: none; }
-        
         @media only screen and (max-width: 768px) {
             .desktop-view { display: none; }
             .mobile-view { display: block; }
@@ -233,12 +174,9 @@ def get_online_users_count_and_names():
     try:
         df_active, _ = get_worksheet_data("active_users")
         if df_active.empty: return 0, []
-        
         df_users, _ = get_worksheet_data("users")
-        
         now = datetime.now()
         active_names = []
-        
         for _, row in df_active.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
@@ -246,7 +184,6 @@ def get_online_users_count_and_names():
                     email = str(row['username']).lower().strip()
                     display_name = email
                     if not df_users.empty:
-                        # חיפוש שם המשתמש
                         user_row = df_users[df_users['username'].astype(str).str.lower().str.strip() == email]
                         if not user_row.empty:
                             display_name = user_row.iloc[0]['name']
@@ -282,14 +219,11 @@ def update_settings_list(column_name, new_list):
     sheet = client.open(SHEET_NAME).worksheet("settings")
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    
     other_col = 'payment_terms' if column_name == 'fields' else 'fields'
     other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
-    
     max_len = max(len(new_list), len(other_list))
     new_list += [''] * (max_len - len(new_list))
     other_list += [''] * (max_len - len(other_list))
-    
     new_df = pd.DataFrame({column_name: new_list, other_col: other_list})
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
@@ -312,7 +246,7 @@ def confirm_bulk_delete(suppliers_to_delete):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- 7. טבלת מנהל (הפיכת עמודות ידנית) ---
+# --- 7. טבלת מנהל ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
     with c_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
@@ -322,36 +256,12 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # --- הטריק ליישור: הופכים את הסדר הלוגי של העמודות ---
-        # בטבלה LTR: עמודה 0 היא משמאל, עמודה אחרונה היא מימין.
-        # אנחנו רוצים: מחיקה (שמאל), שאר הטבלה, שם ספק (ימין).
+        # סדר העמודות: שם ספק ראשון (ימין ב-RTL) עד לצ'קבוקס מחיקה (אחרון, שמאל)
+        cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
+        final_cols = [c for c in cols_order if c in df.columns]
+        df_disp = df[final_cols].copy()
         
-        # 1. קובעים את הסדר ה"נכון" (הפוך)
-        cols_visual_rtl = [
-            'מחיקה?',       # יופיע בצד שמאל (התחלה של LTR)
-            'נוסף על ידי',
-            'תנאי תשלום',
-            'שם איש קשר',
-            'כתובת',
-            'אימייל',
-            'טלפון',
-            'תחום עיסוק',
-            'שם הספק'       # יופיע בצד ימין (סוף של LTR)
-        ]
-        
-        # 2. מסננים עמודות קיימות
-        existing_cols = [c for c in cols_visual_rtl if c in df.columns or c == 'מחיקה?']
-        
-        # 3. בונים את הדאטה פריים לתצוגה
-        df_disp = df.copy()
         df_disp["מחיקה?"] = False
-        df_disp = df_disp[[c for c in existing_cols if c != 'מחיקה?']] # סידור זמני בלי מחיקה
-        
-        # מוסיפים מחיקה בהתחלה (צד שמאל)
-        df_disp.insert(0, "מחיקה?", False)
-        
-        # עכשיו הסדר הוא: [מחיקה, נוסף ע"י... שם הספק]
-        # בתצוגה LTR זה ייראה: | מחיקה | ... | שם הספק | -> בדיוק מה שביקשת!
 
         st.write("סמן בתיבה את הספקים למחיקה:")
         
@@ -379,7 +289,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
                 confirm_bulk_delete(sel["שם הספק"].tolist())
     else: st.info("אין נתונים")
 
-# --- 8. טבלת משתמש (HTML שטוח) ---
+# --- 8. טבלת משתמש ---
 def show_suppliers_table(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
     with c_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -389,14 +299,11 @@ def show_suppliers_table(df, all_fields_list):
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר עמודות רגיל (שם ראשון)
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         df_final = df[[c for c in cols if c in df.columns]]
         
-        # HTML מחשב (ללא רווחים!)
         table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
         
-        # HTML טלפון (מחרוזת אחת ארוכה)
         cards_html = ""
         for _, row in df.iterrows():
             cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
@@ -454,7 +361,7 @@ def login_page():
                             add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
                             st.success("נשלח לאישור")
 
-# --- 10. אפליקציה ראשית ---
+# --- 10. ראשי ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
@@ -464,27 +371,21 @@ def main_app():
     fields_list, payment_list = get_settings_lists()
     df_suppliers, _ = get_worksheet_data("suppliers")
 
-    # כותרת וכפתורים
     c1, c2, c3 = st.columns([6, 2, 1])
     c1.title(f"שלום, {user_name}")
-    if c2.button("🔄 רענן"):
+    if c2.button("🔄"):
         st.cache_data.clear()
         st.rerun()
     if c3.button("יציאה"):
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # הודעות
     with st.expander("📬 ההגשות שלי"):
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
-        
-        # תיקון השגיאה: אתחול כ-DataFrame תמיד
-        my_rejections = pd.DataFrame()
-        
+        my_rejections = pd.DataFrame() 
         if not df_rejected.empty:
-            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rejected['נוסף על ידי'].astype(str).str.contains(current_user_email, na=False)
+            mask = df_rejected['נוסף על ידי'].astype(str).str.contains(user_name, na=False)
             my_rejections = df_rejected[mask]
-        
         if not my_rejections.empty:
             st.error(f"יש {len(my_rejections)} ספקים שנדחו.")
             st.dataframe(my_rejections[['שם הספק', 'תאריך דחייה']], use_container_width=True)
@@ -492,7 +393,6 @@ def main_app():
 
     st.markdown("---")
 
-    # --- מנהל ---
     if user_role == 'admin':
         df_pend_users, _ = get_worksheet_data("pending_users")
         c_users = len(df_pend_users) if not df_pend_users.empty else 0
@@ -501,7 +401,6 @@ def main_app():
 
         tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # קריאה לטבלת המנהל החדשה
         with tabs[0]: show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
         with tabs[1]:
@@ -595,17 +494,101 @@ def main_app():
                         st.rerun()
 
         with tabs[5]:
-            up = st.file_uploader("Excel", type="xlsx")
-            if up and st.button("טען"):
+            # --- הוספת כפתור הורדת תבנית ---
+            st.subheader("יבוא נתונים")
+            st.markdown("כדי לייבא נתונים בהצלחה, יש להשתמש בקובץ אקסל הבנוי בדיוק לפי התבנית.")
+            
+            # יצירת קובץ התבנית בזיכרון
+            template_buffer = generate_excel_template()
+            
+            st.download_button(
+                label="📥 הורד תבנית אקסל ריקה",
+                data=template_buffer,
+                file_name="suppliers_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            st.divider()
+            
+            # העלאת קובץ
+            up = st.file_uploader("העלה את הקובץ המלא כאן", type="xlsx")
+            
+            if up and st.button("בדוק וטען לקובץ"):
                 try:
-                    d = pd.read_excel(up).astype(str)
-                    cl = get_client()
-                    sh = cl.open(SHEET_NAME).worksheet("suppliers")
-                    sh.append_rows(d.values.tolist())
-                    st.success("נטען")
-                except: st.error("שגיאה")
+                    # 1. קריאת הקובץ
+                    new_df = pd.read_excel(up)
+                    # המרה לטקסט וניקוי nan
+                    new_df = new_df.astype(str).replace('nan', '')
+                    
+                    # 2. וידוא עמודות
+                    expected_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום']
+                    if not all(col in new_df.columns for col in expected_cols):
+                        st.error(f"הקובץ לא תואם לתבנית. העמודות חייבות להיות: {', '.join(expected_cols)}")
+                    else:
+                        errors = []
+                        valid_rows = []
+                        
+                        # 3. מעבר על השורות לבדיקת תקינות
+                        # טעינת המאגר הקיים לצורך בדיקת כפילויות
+                        current_db, _ = get_worksheet_data("suppliers")
+                        
+                        for idx, row in new_df.iterrows():
+                            excel_row_num = idx + 2 # (כותרת + אינדקס 0)
+                            
+                            # א. בדיקת שדות חובה (כולם חוץ מאיש קשר)
+                            mandatory = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'תנאי תשלום']
+                            missing = [col for col in mandatory if not row[col].strip()]
+                            
+                            if missing:
+                                errors.append(f"שורה {excel_row_num}: חסרים שדות חובה ({', '.join(missing)})")
+                                continue
+                                
+                            # ב. בדיקת אימייל
+                            if not is_valid_email(row['אימייל']):
+                                errors.append(f"שורה {excel_row_num}: כתובת אימייל לא תקינה ({row['אימייל']})")
+                                continue
+                                
+                            # ג. בדיקת כפילות במאגר הקיים
+                            is_dup, msg = check_duplicate_supplier(current_db, row['שם הספק'], row['טלפון'], row['אימייל'])
+                            if is_dup:
+                                errors.append(f"שורה {excel_row_num}: {msg}")
+                                continue
+                                
+                            # ד. בדיקת כפילות בתוך הקובץ עצמו (נגד שורות כפולות באקסל)
+                            # ניצור DF זמני של מה שאישרנו עד כה
+                            if valid_rows:
+                                temp_valid_df = pd.DataFrame(valid_rows, columns=expected_cols + ['נוסף על ידי'])
+                                is_dup_internal, msg_internal = check_duplicate_supplier(temp_valid_df, row['שם הספק'], row['טלפון'], row['אימייל'])
+                                if is_dup_internal:
+                                    errors.append(f"שורה {excel_row_num}: כפילות בתוך הקובץ עצמו ({msg_internal})")
+                                    continue
 
-    # --- משתמש רגיל ---
+                            # אם הכל תקין - מכינים את השורה
+                            # מוסיפים את המשתמש הנוכחי כמי שהוסיף
+                            clean_row = [row[c].strip() for c in expected_cols]
+                            clean_row.append(user_name) # עמודת 'נוסף על ידי'
+                            valid_rows.append(clean_row)
+
+                        # 4. הצגת תוצאות
+                        if errors:
+                            st.error("❌ נמצאו שגיאות בקובץ. הנתונים לא נטענו.")
+                            st.write("פירוט השגיאות:")
+                            for e in errors:
+                                st.warning(e)
+                        elif not valid_rows:
+                            st.warning("הקובץ ריק או לא מכיל נתונים תקינים.")
+                        else:
+                            # 5. שמירה סופית
+                            cl = get_client()
+                            sh = cl.open(SHEET_NAME).worksheet("suppliers")
+                            sh.append_rows(valid_rows)
+                            st.success(f"✅ הצלחה! {len(valid_rows)} ספקים חדשים נטענו למערכת.")
+                            time.sleep(2)
+                            st.rerun()
+
+                except Exception as e:
+                    st.error(f"שגיאה בעיבוד הקובץ: {e}")
+
     else:
         user_tabs = st.tabs(["🔎 חיפוש", "➕ הצעה"])
         with user_tabs[0]: show_suppliers_table(df_suppliers, fields_list)
@@ -629,19 +612,19 @@ def main_app():
                                 st.success("נשלח!")
                     else: st.error("חסרים פרטים")
 
-    # --- מונה מחוברים ---
     cnt, names = get_online_users_count_and_names()
-    names_html = "<br>".join(names) if names else "רק אתה כאן"
+    names_html = "<br>".join(names) if names else "אין"
     
-    # טולטיפ מחוברים - זהה לכולם
+    # טולטיפ
+    tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
+
     st.markdown(f"""
     <div class="online-container">
-        <div class="online-list"><strong>מחוברים כעת:</strong><br>{names_html}</div>
+        {tooltip_html}
         <div class="online-badge">🟢 מחוברים: {cnt}</div>
     </div>
     """, unsafe_allow_html=True)
 
-# --- הרצה ---
 set_css()
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if not st.session_state['logged_in']: login_page()
