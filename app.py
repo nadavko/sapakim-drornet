@@ -65,9 +65,7 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* ---- תיקון לטבלה של המנהל ---- */
-        /* אנחנו מסירים את ה-RTL בכוח מהגריד עצמו כדי לא לשבש את סדר העמודות ההפוך שעשינו בקוד */
-        /* אבל שומרים על יישור הטקסט לימין */
+        /* טבלה למנהל (st.data_editor) */
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
             justify-content: flex-end !important;
@@ -90,8 +88,65 @@ def set_css():
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
-        /* מונה משתמשים */
-        .online-counter { position: fixed; bottom: 10px; left: 10px; background-color: #4CAF50; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.8em; z-index: 9999; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        /* --- עיצוב מחדש למונה המשתמשים (Hover Tooltip) --- */
+        .online-container {
+            position: fixed;
+            bottom: 15px;
+            left: 15px; /* צד שמאל למטה */
+            z-index: 99999;
+            font-family: sans-serif;
+            direction: rtl;
+        }
+        
+        /* הכפתור עצמו */
+        .online-badge {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 50px;
+            font-size: 0.9em;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            cursor: default;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        /* רשימת המשתמשים (מוסתרת כברירת מחדל) */
+        .online-list {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            bottom: 45px; /* מופיע מעל הכפתור */
+            left: 0;
+            background-color: white;
+            color: #333;
+            min-width: 180px;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            border: 1px solid #eee;
+            transition: all 0.2s ease-in-out;
+            text-align: right;
+            font-size: 0.85em;
+        }
+        
+        /* החץ הקטן למטה של הבועה */
+        .online-list::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 20px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: white transparent transparent transparent;
+        }
+
+        /* טריגר: כשעוברים עם העכבר על הקונטיינר, הרשימה מופיעה */
+        .online-container:hover .online-list {
+            visibility: visible;
+            opacity: 1;
+            bottom: 55px; /* אפקט ציפה קטן למעלה */
+        }
 
         /* הגדרות רספונסיביות */
         .desktop-view { display: block; }
@@ -101,7 +156,6 @@ def set_css():
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
-            /* צמצום שוליים במובייל */
             .block-container { 
                 padding-top: 1rem !important; 
                 padding-left: 0.5rem !important;
@@ -229,7 +283,7 @@ def confirm_bulk_delete(suppliers_to_delete):
     if col2.button("ביטול"):
         st.rerun()
 
-# --- תצוגת טבלה למנהל (עם היפוך עמודות) ---
+# --- תצוגת טבלה למנהל (עם צ'קבוקסים) ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
@@ -242,9 +296,8 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # --- הטריק: בניית הטבלה בסדר הפוך כדי שתופיע נכון מימין לשמאל ---
-        # רשימת העמודות בסדר שאתה רוצה לראות בעין (מימין לשמאל)
-        visual_order = [
+        # סדר העמודות המדויק שביקשת
+        desired_cols = [
             'שם הספק', 
             'תחום עיסוק', 
             'טלפון', 
@@ -255,15 +308,14 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             'נוסף על ידי'
         ]
         
-        # אנחנו הופכים את הרשימה, כך ש"שם הספק" יהיה האחרון ברשימה הלוגית
-        # בטבלה LTR, האלמנט האחרון מופיע בצד ימין!
-        reversed_cols = visual_order[::-1]
-        
-        # מסננים עמודות שקיימות בנתונים
-        final_cols = [c for c in reversed_cols if c in df.columns]
+        final_cols = [c for c in desired_cols if c in df.columns]
         df_display = df[final_cols].copy()
         
-        # הוספת עמודת המחיקה - שתופיע בצד שמאל (ההתחלה של LTR)
+        # בנייה בסדר הפוך כדי שהטבלה תסתדר ויזואלית מימין לשמאל
+        reversed_cols = final_cols[::-1]
+        df_display = df_display[reversed_cols]
+        
+        # מחיקה ראשונה משמאל (שזה בסוף הימין)
         df_display.insert(0, "מחיקה?", False)
 
         st.write("סמן בתיבה את הספקים למחיקה:")
@@ -273,11 +325,10 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             column_config={
                 "מחיקה?": st.column_config.CheckboxColumn(
                     "מחק",
-                    help="סמן למחיקה",
+                    help="סמן כדי למחוק ספק זה",
                     default=False,
                     width="small"
                 ),
-                # הגדרות לשאר העמודות
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -345,7 +396,6 @@ def show_suppliers_table(df, all_fields_list):
 
 # --- דף כניסה (מרכוז) ---
 def login_page():
-    # מרכוז הטופס באמצעות עמודות
     c1, c2, c3 = st.columns([1, 1.5, 1])
     
     with c2:
@@ -415,7 +465,6 @@ def main_app():
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # הודעות דחייה
     with st.expander("📬 ההגשות שלי"):
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
         my_rejections = pd.DataFrame() 
@@ -439,11 +488,9 @@ def main_app():
 
         tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # 1. רשימת ספקים (ממשק חדש עם צ'קבוקסים וסדר הפוך)
         with tabs[0]:
             show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
-        # 2. אישור ספקים
         with tabs[1]:
             if c_supp > 0:
                 for idx, row in df_pend_supp.iterrows():
@@ -468,7 +515,6 @@ def main_app():
                             st.rerun()
             else: st.info("אין ספקים ממתינים")
 
-        # 3. אישור משתמשים
         with tabs[2]:
             if c_users > 0:
                 for idx, row in df_pend_users.iterrows():
@@ -483,7 +529,6 @@ def main_app():
                         st.rerun()
             else: st.info("אין משתמשים")
 
-        # 4. הוספה
         with tabs[3]:
             with st.form("adm_add"):
                 s_name = st.text_input("שם *")
@@ -506,7 +551,6 @@ def main_app():
                                 st.rerun()
                     else: st.error("חסרים פרטים")
         
-        # 5. הגדרות
         with tabs[4]:
             st.subheader("ניהול רשימות")
             c_fields, c_terms = st.columns(2)
@@ -540,7 +584,6 @@ def main_app():
                         update_settings_list("payment_terms", payment_list)
                         st.rerun()
 
-        # 6. יבוא
         with tabs[5]:
             up = st.file_uploader("Excel", type="xlsx")
             if up and st.button("טען"):
@@ -576,9 +619,24 @@ def main_app():
                     else: st.error("חסרים פרטים")
 
     count_online, names_online = get_online_users_count_and_names()
-    st.markdown(f"""<div class="online-counter">🟢 מחוברים: {count_online}</div>""", unsafe_allow_html=True)
+    
+    # הצגת המונה עם הבועה (Tooltip)
+    names_html = "<br>".join(names_online) if names_online else "אין אחרים"
+    
+    # רק מנהל רואה את הרשימה בתוך ה-HTML
     if user_role == 'admin':
-        with st.expander("👀 מי מחובר"): st.write(", ".join(names_online))
+        tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
+    else:
+        tooltip_html = '' # משתמש רגיל לא מקבל את ה-DIV הזה בכלל
+
+    st.markdown(f"""
+    <div class="online-container">
+        {tooltip_html}
+        <div class="online-badge">
+            🟢 מחוברים כעת: {count_online}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 set_css()
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
