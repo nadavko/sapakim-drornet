@@ -65,8 +65,9 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* --- טבלה של המנהל (st.data_editor) --- */
-        /* כאן אנחנו רק דואגים שהטקסט בתוך התאים יהיה מימין לשמאל */
+        /* ---- תיקון לטבלה של המנהל ---- */
+        /* אנחנו מסירים את ה-RTL בכוח מהגריד עצמו כדי לא לשבש את סדר העמודות ההפוך שעשינו בקוד */
+        /* אבל שומרים על יישור הטקסט לימין */
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
             justify-content: flex-end !important;
@@ -100,6 +101,7 @@ def set_css():
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
+            /* צמצום שוליים במובייל */
             .block-container { 
                 padding-top: 1rem !important; 
                 padding-left: 0.5rem !important;
@@ -227,7 +229,7 @@ def confirm_bulk_delete(suppliers_to_delete):
     if col2.button("ביטול"):
         st.rerun()
 
-# --- תצוגת טבלה למנהל (עם צ'קבוקסים) ---
+# --- תצוגת טבלה למנהל (עם היפוך עמודות) ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
@@ -240,8 +242,9 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר העמודות המדויק שביקשת
-        desired_cols = [
+        # --- הטריק: בניית הטבלה בסדר הפוך כדי שתופיע נכון מימין לשמאל ---
+        # רשימת העמודות בסדר שאתה רוצה לראות בעין (מימין לשמאל)
+        visual_order = [
             'שם הספק', 
             'תחום עיסוק', 
             'טלפון', 
@@ -252,16 +255,19 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             'נוסף על ידי'
         ]
         
-        # מסדרים את ה-DataFrame לפי הסדר הזה
-        final_cols = [c for c in desired_cols if c in df.columns]
+        # אנחנו הופכים את הרשימה, כך ש"שם הספק" יהיה האחרון ברשימה הלוגית
+        # בטבלה LTR, האלמנט האחרון מופיע בצד ימין!
+        reversed_cols = visual_order[::-1]
+        
+        # מסננים עמודות שקיימות בנתונים
+        final_cols = [c for c in reversed_cols if c in df.columns]
         df_display = df[final_cols].copy()
         
-        # מוסיפים את עמודת המחיקה בסוף
-        df_display["מחיקה?"] = False
+        # הוספת עמודת המחיקה - שתופיע בצד שמאל (ההתחלה של LTR)
+        df_display.insert(0, "מחיקה?", False)
 
         st.write("סמן בתיבה את הספקים למחיקה:")
         
-        # תצוגת הטבלה
         edited_df = st.data_editor(
             df_display,
             column_config={
@@ -271,7 +277,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
                     default=False,
                     width="small"
                 ),
-                # נעילת שאר העמודות
+                # הגדרות לשאר העמודות
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -337,12 +343,12 @@ def show_suppliers_table(df, all_fields_list):
     else:
         st.info("אין נתונים להצגה.")
 
-# --- דף כניסה ---
+# --- דף כניסה (מרכוז) ---
 def login_page():
-    # מרכוז הטופס
-    _, col_centered, _ = st.columns([1, 1.5, 1])
+    # מרכוז הטופס באמצעות עמודות
+    c1, c2, c3 = st.columns([1, 1.5, 1])
     
-    with col_centered:
+    with c2:
         st.title("🔐 כניסה למערכת")
         
         with st.expander("כלי למנהל: יצירת סיסמה"):
@@ -433,7 +439,7 @@ def main_app():
 
         tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # 1. רשימת ספקים (ממשק חדש עם צ'קבוקסים)
+        # 1. רשימת ספקים (ממשק חדש עם צ'קבוקסים וסדר הפוך)
         with tabs[0]:
             show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
