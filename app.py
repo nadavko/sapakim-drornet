@@ -7,7 +7,7 @@ import time
 import bcrypt
 import re
 
-# --- הגדרת עמוד רחב ---
+# --- הגדרת עמוד רחב (חובה פקודה ראשונה) ---
 st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
 
 # --- הגדרות ---
@@ -44,10 +44,10 @@ def check_duplicate_supplier(df, name, phone, email):
 def set_css():
     st.markdown("""
     <style>
-        /* כיוון כללי - RTL */
+        /* כיוון כללי */
         .stApp { direction: rtl; text-align: right; }
         
-        /* צמצום רווחים */
+        /* הרחבת הקונטיינר הראשי */
         .block-container {
             max-width: 100%;
             padding-top: 1rem;
@@ -57,26 +57,17 @@ def set_css():
         }
 
         /* יישור אלמנטים */
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
-            text-align: right !important; 
-        }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
-            direction: rtl; text-align: right; 
-        }
-        /* טאבים בסדר הפוך */
-        .stTabs [data-baseweb="tab-list"] { 
-            flex-direction: row-reverse; justify-content: flex-end; 
-        }
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
+        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
         /* --- טבלת מנהל (Data Editor) --- */
         [data-testid="stDataEditor"] { direction: rtl !important; }
-        /* כותרות */
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
-            justify-content: flex-start !important; 
+            justify-content: flex-start !important;
             direction: rtl !important;
         }
-        /* תאים */
         [data-testid="stDataEditor"] div[role="gridcell"] {
             text-align: right !important;
             justify-content: flex-end !important;
@@ -96,48 +87,16 @@ def set_css():
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
-        /* --- מונה משתמשים ובועה (Tooltip) --- */
-        .online-container { 
-            position: fixed; 
-            bottom: 15px; 
-            left: 15px; 
-            z-index: 99999; 
-            direction: rtl; 
-            font-family: sans-serif; 
-        }
-        .online-badge { 
-            background-color: #4CAF50; 
-            color: white; 
-            padding: 8px 15px; 
-            border-radius: 50px; 
-            font-size: 0.9em; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3); 
-            cursor: default; 
-            font-weight: bold; 
-        }
+        /* --- מונה משתמשים (Tooltip) --- */
+        .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
+        .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
         .online-list {
-            visibility: hidden; 
-            opacity: 0; 
-            position: absolute; 
-            bottom: 45px; 
-            left: 0;
-            background-color: white; 
-            color: #333; 
-            min-width: 150px; 
-            padding: 10px;
-            border-radius: 8px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
-            border: 1px solid #eee;
-            transition: all 0.2s ease-in-out; 
-            text-align: right; 
-            font-size: 0.85em;
+            visibility: hidden; opacity: 0; position: absolute; bottom: 45px; left: 0;
+            background-color: white; color: #333; min-width: 180px; padding: 10px;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #eee;
+            transition: all 0.2s ease-in-out; text-align: right; font-size: 0.85em;
         }
-        /* הצגה במעבר עכבר */
-        .online-container:hover .online-list { 
-            visibility: visible; 
-            opacity: 1; 
-            bottom: 50px; 
-        }
+        .online-container:hover .online-list { visibility: visible; opacity: 1; bottom: 50px; }
 
         /* רספונסיביות */
         .desktop-view { display: block; }
@@ -189,16 +148,33 @@ def update_active_user(username):
 
 def get_online_users_count_and_names():
     try:
-        df, _ = get_worksheet_data("active_users")
-        if df.empty: return 0, []
+        # 1. שליפת הפעילים
+        df_active, _ = get_worksheet_data("active_users")
+        if df_active.empty: return 0, []
+        
+        # 2. שליפת פרטי המשתמשים (כדי לקבל את השם)
+        df_users, _ = get_worksheet_data("users")
+        
         now = datetime.now()
         active_names = []
-        for _, row in df.iterrows():
+        
+        for _, row in df_active.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
+                # מי שפעיל ב-5 דקות האחרונות
                 if (now - last_seen).total_seconds() < 300: 
-                    active_names.append(row['username'])
+                    email = str(row['username']).lower().strip()
+                    display_name = email # ברירת מחדל
+                    
+                    # חיפוש השם בטבלת המשתמשים
+                    if not df_users.empty:
+                        user_row = df_users[df_users['username'].astype(str).str.lower().str.strip() == email]
+                        if not user_row.empty:
+                            display_name = user_row.iloc[0]['name']
+                    
+                    active_names.append(display_name)
             except: continue
+            
         return len(active_names), active_names
     except: return 0, []
 
@@ -261,7 +237,7 @@ def confirm_bulk_delete(suppliers_to_delete):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- טבלת מנהל (Data Editor) ---
+# --- טבלת מנהל ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
     with c_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
@@ -271,12 +247,11 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר העמודות: שם ספק ראשון (ימין ב-RTL) עד לצ'קבוקס מחיקה (אחרון, שמאל)
+        # סדר עמודות: שם ספק ראשון (ימין), מחיקה אחרון (שמאל)
         cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in cols_order if c in df.columns]
         df_disp = df[final_cols].copy()
         
-        # הוספת עמודת המחיקה בסוף
         df_disp["מחיקה?"] = False
 
         st.write("סמן בתיבה את הספקים למחיקה:")
@@ -305,7 +280,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
                 confirm_bulk_delete(sel["שם הספק"].tolist())
     else: st.info("אין נתונים")
 
-# --- טבלת משתמש (HTML נקי) ---
+# --- טבלת משתמש ---
 def show_suppliers_table(df, all_fields_list):
     c_search, c_filter = st.columns([2, 1])
     with c_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -318,10 +293,10 @@ def show_suppliers_table(df, all_fields_list):
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         df_final = df[[c for c in cols if c in df.columns]]
         
-        # בניית HTML למחשב - ללא ירידות שורה!
+        # HTML מחשב נקי
         table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
         
-        # בניית HTML לטלפון
+        # HTML טלפון
         cards_html = ""
         for _, row in df.iterrows():
             cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
