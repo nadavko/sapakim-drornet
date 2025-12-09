@@ -52,7 +52,7 @@ def set_css():
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* טבלה רגילה למשתמש */
+        /* טבלה */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
@@ -99,7 +99,6 @@ def get_worksheet_data(worksheet_name):
 # --- ניהול משתמשים מחוברים ---
 def update_active_user(username):
     current_time = datetime.now()
-    # עדכון פעם בדקה
     if 'last_api_update' in st.session_state:
         if (current_time - st.session_state['last_api_update']).seconds < 60:
             return
@@ -126,14 +125,13 @@ def get_online_users_count_and_names():
         for _, row in df.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
-                # מי שנראה ב-5 הדקות האחרונות
                 if (now - last_seen).total_seconds() < 300: 
                     active_names.append(row['username'])
             except: continue
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס בגיליון ---
+# --- פעולות בסיס ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -149,7 +147,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- הגדרות (רשימות) ---
+# --- הגדרות ---
 def get_settings_lists():
     df, _ = get_worksheet_data("settings")
     if df.empty: return [], []
@@ -186,49 +184,7 @@ def confirm_delete_supplier(supplier_name):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- תצוגת טבלה למנהל (עם חיפוש, סינון, כל המידע ומחיקה) ---
-def show_admin_full_list(df, all_fields_list):
-    # אזור סינון וחיפוש (זהה למשתמש)
-    col_search, col_filter = st.columns([2, 1])
-    with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
-    with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
-
-    if not df.empty:
-        # לוגיקת סינון
-        if selected_category != "הכל":
-            df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
-        if search:
-            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
-        
-        # כותרות הטבלה
-        st.markdown("---")
-        # אנו בונים "טבלה" באמצעות עמודות של סטרימליט כדי לאפשר כפתור מחיקה
-        # אבל כדי שזה יראה טוב, נשתמש ב-Container לכל שורה
-        
-        # לולאה על הספקים והצגה
-        for idx, row in df.iterrows():
-            with st.container(border=True):
-                # חלוקה: רוב המקום למידע, קצת מקום לכפתור מחיקה
-                c_info, c_del = st.columns([9, 1])
-                
-                with c_info:
-                    # שימוש ב Markdown להצגת המידע בשורה/שורות יפות
-                    info_text = f"""
-                    **{row['שם הספק']}** | {row['תחום עיסוק']}
-                    📞 {row['טלפון']} | ✉️ {row.get('אימייל','')} | 👤 {row.get('שם איש קשר','')}
-                    📍 {row['כתובת']} | 💳 {row.get('תנאי תשלום','')} | ✍️ {row.get('נוסף על ידי','')}
-                    """
-                    st.markdown(info_text)
-                
-                with c_del:
-                    # כפתור מחיקה מיושר
-                    st.write("") # רווח קטן
-                    if st.button("🗑️", key=f"del_adm_{idx}"):
-                        confirm_delete_supplier(row['שם הספק'])
-    else:
-        st.info("אין נתונים.")
-
-# --- תצוגת טבלה למשתמש רגיל ---
+# --- תצוגת טבלה אחידה (HTML) ---
 def show_suppliers_table(df, all_fields_list):
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש חופשי", "")
@@ -240,6 +196,7 @@ def show_suppliers_table(df, all_fields_list):
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
+        # סדר עמודות
         desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in desired_cols if c in df.columns]
         
@@ -317,7 +274,7 @@ def login_page():
                         add_row_to_sheet("pending_users", [new_email, hash_password(new_pass), fname, str(datetime.now())])
                         st.success("בקשה נשלחה")
 
-# --- אפליקציה ראשית ---
+# --- ראשי ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
@@ -358,12 +315,21 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        # שמות טאבים מתוקנים
-        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        # שמות הטאבים
+        tabs = st.tabs(["📋 רשימת ספקים (ניהול)", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
-        # 1. רשימה + חיפוש + סינון + מחיקה
+        # 1. רשימת ספקים + מחיקה (משופר)
         with tabs[0]:
-            show_admin_full_list(df_suppliers, fields_list)
+            # אזור מחיקה למעלה - הכי נקי ומסודר
+            if not df_suppliers.empty:
+                with st.expander("🗑️ מחיקת ספק (לחץ לפתיחה)", expanded=False):
+                    c_del_1, c_del_2 = st.columns([3, 1])
+                    supplier_to_delete = c_del_1.selectbox("בחר ספק למחיקה:", df_suppliers['שם הספק'].unique())
+                    if c_del_2.button("מחק ספק נבחר", type="primary"):
+                        confirm_delete_supplier(supplier_to_delete)
+            
+            # הצגת הטבלה הרגילה (בדיוק כמו למשתמשים)
+            show_suppliers_table(df_suppliers, fields_list)
         
         # 2. אישור ספקים
         with tabs[1]:
@@ -428,8 +394,9 @@ def main_app():
                                 st.rerun()
                     else: st.error("חסרים פרטים")
         
-        # 5. הגדרות (הוחזר)
+        # 5. הגדרות (הוחזר למקום)
         with tabs[4]:
+            st.subheader("ניהול רשימות")
             c_fields, c_terms = st.columns(2)
             with c_fields:
                 st.write("**תחומי עיסוק**")
