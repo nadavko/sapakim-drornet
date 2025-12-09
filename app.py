@@ -7,14 +7,14 @@ import time
 import bcrypt
 import re
 
-# --- הגדרת עמוד רחב (חובה פקודה ראשונה) ---
-st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
+# --- הגדרת עמוד רחב ---
+st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="collapsed")
 
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SHEET_NAME = "ניהול ספקים"
 
-# --- פונקציות עזר וולידציה ---
+# --- פונקציות עזר ---
 def hash_password(password):
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     return hashed.decode('utf-8')
@@ -22,8 +22,7 @@ def hash_password(password):
 def check_password(plain_text_password, hashed_password):
     try:
         return bcrypt.checkpw(plain_text_password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except ValueError:
-        return False
+    except ValueError: return False
 
 def is_valid_email(email):
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
@@ -47,25 +46,32 @@ def set_css():
         /* כיוון כללי */
         .stApp { direction: rtl; text-align: right; }
         
-        /* הרחבת הקונטיינר הראשי */
+        /* צמצום רווחים עליונים */
         .block-container {
-            max-width: 100%;
-            padding-top: 1rem;
+            padding-top: 1.5rem;
             padding-right: 2rem;
             padding-left: 2rem;
             padding-bottom: 3rem;
+            max-width: 100%;
         }
 
         /* יישור אלמנטים */
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
-        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
+            text-align: right !important; 
+        }
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
+            direction: rtl; text-align: right; 
+        }
+        /* טאבים בסדר הפוך */
+        .stTabs [data-baseweb="tab-list"] { 
+            flex-direction: row-reverse; justify-content: flex-end; 
+        }
         
-        /* --- טבלת מנהל (Data Editor) --- */
+        /* --- טבלת מנהל --- */
         [data-testid="stDataEditor"] { direction: rtl !important; }
         [data-testid="stDataEditor"] div[role="columnheader"] {
             text-align: right !important;
-            justify-content: flex-start !important;
+            justify-content: flex-start !important; 
             direction: rtl !important;
         }
         [data-testid="stDataEditor"] div[role="gridcell"] {
@@ -74,7 +80,7 @@ def set_css():
             direction: rtl !important;
         }
         
-        /* --- טבלת משתמש (HTML) --- */
+        /* --- טבלת משתמש --- */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
@@ -87,7 +93,7 @@ def set_css():
         .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
         .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
-        /* --- מונה משתמשים (Tooltip) --- */
+        /* --- מונה משתמשים --- */
         .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
         .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
         .online-list {
@@ -148,11 +154,9 @@ def update_active_user(username):
 
 def get_online_users_count_and_names():
     try:
-        # 1. שליפת הפעילים
         df_active, _ = get_worksheet_data("active_users")
         if df_active.empty: return 0, []
         
-        # 2. שליפת פרטי המשתמשים (כדי לקבל את השם)
         df_users, _ = get_worksheet_data("users")
         
         now = datetime.now()
@@ -161,20 +165,15 @@ def get_online_users_count_and_names():
         for _, row in df_active.iterrows():
             try:
                 last_seen = datetime.strptime(str(row['last_seen']), "%Y-%m-%d %H:%M:%S")
-                # מי שפעיל ב-5 דקות האחרונות
                 if (now - last_seen).total_seconds() < 300: 
                     email = str(row['username']).lower().strip()
-                    display_name = email # ברירת מחדל
-                    
-                    # חיפוש השם בטבלת המשתמשים
+                    display_name = email
                     if not df_users.empty:
                         user_row = df_users[df_users['username'].astype(str).str.lower().str.strip() == email]
                         if not user_row.empty:
                             display_name = user_row.iloc[0]['name']
-                    
                     active_names.append(display_name)
             except: continue
-            
         return len(active_names), active_names
     except: return 0, []
 
@@ -247,7 +246,7 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
         if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
         if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר עמודות: שם ספק ראשון (ימין), מחיקה אחרון (שמאל)
+        # סדר העמודות: שם ספק ראשון (ימין), מחיקה אחרון (שמאל)
         cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         final_cols = [c for c in cols_order if c in df.columns]
         df_disp = df[final_cols].copy()
@@ -293,7 +292,7 @@ def show_suppliers_table(df, all_fields_list):
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         df_final = df[[c for c in cols if c in df.columns]]
         
-        # HTML מחשב נקי
+        # HTML מחשב ללא רווחים
         table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
         
         # HTML טלפון
@@ -364,14 +363,25 @@ def main_app():
     fields_list, payment_list = get_settings_lists()
     df_suppliers, _ = get_worksheet_data("suppliers")
 
-    c1, c2, c3 = st.columns([6, 2, 1])
-    c1.title(f"שלום, {user_name}")
-    if c2.button("🔄"):
-        st.cache_data.clear()
-        st.rerun()
-    if c3.button("יציאה"):
-        st.session_state['logged_in'] = False
-        st.rerun()
+    # כותרת וכפתורים ביחס מתוקן
+    c_title, c_refresh, c_exit = st.columns([5, 1, 1])
+    
+    with c_title:
+        st.title(f"שלום, {user_name}")
+    
+    with c_refresh:
+        st.write("") # מרווח אנכי ליישור עם הכותרת
+        st.write("")
+        if st.button("🔄 רענן", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+            
+    with c_exit:
+        st.write("")
+        st.write("")
+        if st.button("יציאה", type="primary", use_container_width=True):
+            st.session_state['logged_in'] = False
+            st.rerun()
 
     with st.expander("📬 ההגשות שלי"):
         df_rejected, _ = get_worksheet_data("rejected_suppliers")
@@ -523,7 +533,7 @@ def main_app():
     cnt, names = get_online_users_count_and_names()
     names_html = "<br>".join(names) if names else "אין"
     
-    # טולטיפ משותף לכולם
+    # טולטיפ לכולם
     tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
 
     st.markdown(f"""
