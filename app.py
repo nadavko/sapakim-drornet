@@ -198,103 +198,113 @@ def show_suppliers_table(df):
     search = st.text_input("חיפוש חופשי...", "")
     
     if not df.empty:
-        # סינון
+        # סינון הנתונים
         if search:
             df = df[
                 df['שם הספק'].astype(str).str.contains(search, case=False, na=False) |
                 df['תחום עיסוק'].astype(str).str.contains(search, case=False, na=False)
             ]
         
-        # --- יצירת ה-HTML של הטבלה (למחשב) ---
-        table_html = df.to_html(index=False, classes='rtl-table', border=0)
+        # --- חלק 1: הזרקת ה-CSS (עיצוב) בנפרד ---
+        # שמים את זה בנפרד כדי שהסוגריים של ה-CSS לא יבלבלו את הפייתון
+        st.markdown("""
+        <style>
+            /* עיצוב כללי לטבלה בעברית */
+            .rtl-table {
+                width: 100%;
+                border-collapse: collapse;
+                direction: rtl;
+                margin-bottom: 20px;
+            }
+            .rtl-table th {
+                background-color: #f0f2f6;
+                color: #31333F;
+                text-align: right;
+                padding: 12px;
+                border-bottom: 2px solid #ddd;
+            }
+            .rtl-table td {
+                text-align: right;
+                padding: 10px;
+                border-bottom: 1px solid #eee;
+                color: #31333F;
+            }
+            
+            /* עיצוב כרטיסיות לנייד */
+            .mobile-card {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                margin-bottom: 12px;
+                padding: 4px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                direction: rtl;
+                text-align: right;
+            }
+            .mobile-card summary {
+                padding: 12px;
+                cursor: pointer;
+                font-weight: bold;
+                background-color: #fafafa;
+                border-radius: 8px;
+                list-style: none;
+            }
+            .mobile-card .card-content {
+                padding: 12px;
+                border-top: 1px solid #eee;
+                font-size: 0.95em;
+                line-height: 1.6;
+            }
+            .mobile-card a {
+                color: #0068c9;
+                text-decoration: none;
+                font-weight: bold;
+            }
+
+            /* --- מנגנון ההסתרה (רספונסיביות) --- */
+            
+            /* ברירת מחדל: מחשב */
+            .desktop-view { display: block; }
+            .mobile-view { display: none; }
+
+            /* מסכים קטנים: נייד */
+            @media only screen and (max-width: 768px) {
+                .desktop-view { display: none; }
+                .mobile-view { display: block; }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # --- חלק 2: יצירת ה-HTML של הטבלה (למחשב) ---
+        table_html = df.to_html(index=False, classes='rtl-table', border=0, escape=False)
         
-        # --- יצירת ה-HTML של הכרטיסיות (לנייד) ---
-        cards_html = ""
+        # --- חלק 3: יצירת ה-HTML של הכרטיסיות (לנייד) ---
+        cards_html_content = ""
         for _, row in df.iterrows():
-            # שימוש בתגית details שמתנהגת כמו expander
-            cards_html += f"""
+            cards_html_content += f"""
             <div class="mobile-card">
                 <details>
-                    <summary><strong>{row['שם הספק']}</strong> - {row['תחום עיסוק']}</summary>
+                    <summary>{row['שם הספק']} <span style="font-weight:normal; color:#666;">| {row['תחום עיסוק']}</span></summary>
                     <div class="card-content">
-                        <p><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></p>
-                        <p><strong>כתובת:</strong> {row['כתובת']}</p>
-                        <p><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</p>
+                        <div><strong>טלפון:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div>
+                        <div><strong>כתובת:</strong> {row['כתובת']}</div>
+                        <div><strong>תנאי תשלום:</strong> {row['תנאי תשלום']}</div>
                     </div>
                 </details>
             </div>
             """
 
-        # --- הזרקת הכל יחד עם CSS חכם ---
+        # --- חלק 4: הדפסה למסך ---
+        # מחברים את הכל ומדפיסים עם הרשאה ל-HTML
         st.markdown(f"""
-        <style>
-            /* --- עיצוב הטבלה (כמו קודם) --- */
-            .rtl-table {{
-                width: 100%;
-                border-collapse: collapse;
-                direction: rtl;
-            }}
-            .rtl-table th {{
-                background-color: #f0f2f6;
-                color: #31333F;
-                text-align: right;
-                padding: 10px;
-                border-bottom: 2px solid #ddd;
-            }}
-            .rtl-table td {{
-                text-align: right;
-                padding: 10px;
-                border-bottom: 1px solid #eee;
-            }}
-            
-            /* --- עיצוב הכרטיסיות --- */
-            .mobile-card {{
-                background-color: white;
-                border: 1px solid #e0e0e0;
-                border-radius: 8px;
-                margin-bottom: 10px;
-                padding: 5px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }}
-            .mobile-card summary {{
-                padding: 10px;
-                cursor: pointer;
-                list-style: none; /* מסתיר את המשולש הדיפולטיבי בדפדפנים מסוימים */
-                font-weight: 500;
-            }}
-            .mobile-card .card-content {{
-                padding: 10px;
-                border-top: 1px solid #f0f0f0;
-                font-size: 0.9em;
-                color: #555;
-            }}
-            .mobile-card a {{
-                color: #0068c9;
-                text-decoration: none;
-            }}
-
-            /* --- החלק החשוב: Media Queries --- */
-            
-            /* כברירת מחדל (מחשב) - תראה טבלה, תסתיר כרטיסיות */
-            .desktop-view {{ display: block; }}
-            .mobile-view {{ display: none; }}
-
-            /* אם המסך קטן מ-768 פיקסלים (טאבלט/נייד) - תהפוך את היוצרות */
-            @media only screen and (max-width: 768px) {{
-                .desktop-view {{ display: none; }}
-                .mobile-view {{ display: block; }}
-            }}
-        </style>
-
         <div class="desktop-view">
             {table_html}
         </div>
-        
         <div class="mobile-view">
-            {cards_html}
+            {cards_html_content}
         </div>
         """, unsafe_allow_html=True)
-        
+
     else:
         st.info("אין נתונים להצגה")
 # --- הרצה ---
@@ -303,5 +313,6 @@ if not st.session_state.get('logged_in', False):
     login_page()
 else:
     main_app()
+
 
 
