@@ -7,8 +7,8 @@ import time
 import bcrypt
 import re
 
-# --- הגדרת עמוד רחב (חובה פקודה ראשונה) ---
-st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="collapsed")
+# --- הגדרת עמוד רחב ---
+st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
 
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -30,18 +30,14 @@ def is_valid_email(email):
     return re.match(pattern, email) is not None
 
 def check_duplicate_supplier(df, name, phone, email):
-    if df.empty:
-        return False, ""
+    if df.empty: return False, ""
     name = str(name).strip()
     phone = str(phone).strip()
     email = str(email).strip().lower()
     
-    if name in df['שם הספק'].astype(str).str.strip().values:
-        return True, f"שגיאה: ספק בשם '{name}' כבר קיים."
-    if phone in df['טלפון'].astype(str).str.strip().values:
-        return True, f"שגיאה: טלפון '{phone}' כבר קיים."
-    if email and email in df['אימייל'].astype(str).str.strip().str.lower().values:
-        return True, f"שגיאה: אימייל '{email}' כבר קיים."
+    if name in df['שם הספק'].astype(str).str.strip().values: return True, f"ספק בשם '{name}' כבר קיים."
+    if phone in df['טלפון'].astype(str).str.strip().values: return True, f"טלפון '{phone}' כבר קיים."
+    if email and email in df['אימייל'].astype(str).str.strip().str.lower().values: return True, f"אימייל '{email}' כבר קיים."
     return False, ""
 
 # --- CSS עיצוב ---
@@ -51,150 +47,65 @@ def set_css():
         /* כיוון כללי */
         .stApp { direction: rtl; text-align: right; }
         
-        /* צמצום שוליים עליונים כדי לנצל מקום */
+        /* הרחבת הקונטיינר הראשי */
         .block-container {
-            padding-top: 1rem;
-            padding-left: 2rem;
-            padding-right: 2rem;
             max-width: 100%;
+            padding-top: 1rem;
+            padding-right: 2rem;
+            padding-left: 2rem;
+            padding-bottom: 3rem;
         }
 
-        /* יישור אלמנטים כללי */
-        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { 
-            text-align: right !important; 
-        }
-        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { 
-            direction: rtl; text-align: right; 
-        }
-        .stTabs [data-baseweb="tab-list"] { 
-            flex-direction: row-reverse; justify-content: flex-end; 
-        }
+        /* יישור אלמנטים */
+        h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
+        .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
+        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* --- תיקון לטבלה של המנהל (st.data_editor) --- */
-        [data-testid="stDataEditor"] {
-            direction: rtl;
-        }
+        /* --- תיקון לטבלה של המנהל (Data Editor) --- */
+        [data-testid="stDataEditor"] { direction: rtl !important; }
         [data-testid="stDataEditor"] div[role="columnheader"] {
+            direction: rtl !important;
             text-align: right !important;
             justify-content: flex-start !important; /* מצמיד לימין */
-            direction: rtl;
         }
         [data-testid="stDataEditor"] div[role="gridcell"] {
+            direction: rtl !important;
             text-align: right !important;
             justify-content: flex-end !important;
-            direction: rtl;
         }
         
-        /* --- עיצוב טבלת HTML למשתמש --- */
-        .rtl-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            direction: rtl; 
-            margin-top: 10px; 
-            font-size: 0.95em;
-        }
-        .rtl-table th { 
-            background-color: #f8f9fa; 
-            text-align: right !important; 
-            padding: 12px; 
-            border-bottom: 2px solid #dee2e6; 
-            color: #333; 
-            font-weight: bold; 
-            white-space: nowrap; 
-        }
-        .rtl-table td { 
-            text-align: right !important; 
-            padding: 10px; 
-            border-bottom: 1px solid #e9ecef; 
-            color: #333; 
-        }
-        /* צבעי זברה לשורות */
-        .rtl-table tr:nth-child(even) {background-color: #fdfdfd;}
-        .rtl-table tr:hover {background-color: #f1f1f1;}
+        /* --- טבלת משתמשים (HTML) --- */
+        .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
+        .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
+        .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
 
         /* --- כרטיסיות מובייל --- */
-        .mobile-card { 
-            background-color: white; 
-            border: 1px solid #e0e0e0; 
-            border-radius: 8px; 
-            margin-bottom: 10px; 
-            padding: 12px; 
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
-            direction: rtl; 
-            text-align: right !important; 
-        }
-        .mobile-card summary { 
-            font-weight: bold; 
-            cursor: pointer; 
-            color: #2c3e50; 
-            list-style: none; 
-            outline: none; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }
-        .mobile-card summary::after { content: "+"; font-size: 1.2em; color: #7f8c8d; }
+        .mobile-card { background-color: white; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); direction: rtl; text-align: right !important; }
+        .mobile-card summary { font-weight: bold; cursor: pointer; color: #000; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
+        .mobile-card summary::after { content: "+"; font-size: 1.2em; margin-right: 10px; color: #666; }
         .mobile-card details[open] summary::after { content: "-"; }
-        .mobile-card .card-content { 
-            margin-top: 10px; 
-            padding-top: 10px; 
-            border-top: 1px solid #eee; 
-            font-size: 0.9em; 
-            color: #34495e; 
-            line-height: 1.6;
-        }
-        .mobile-card a { color: #0066cc; text-decoration: none; font-weight: 500; }
+        .mobile-card .card-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.95em; color: #333; }
+        .mobile-card a { color: #0068c9; text-decoration: none; font-weight: bold; }
         
         /* --- מונה משתמשים (Tooltip) --- */
-        .online-container {
-            position: fixed;
-            bottom: 15px;
-            left: 15px;
-            z-index: 99999;
-            font-family: sans-serif;
-            direction: rtl;
-        }
-        .online-badge {
-            background-color: #28a745;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 50px;
-            font-size: 0.85em;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            cursor: default;
-            font-weight: bold;
-        }
+        .online-container { position: fixed; bottom: 15px; left: 15px; z-index: 99999; direction: rtl; font-family: sans-serif; }
+        .online-badge { background-color: #4CAF50; color: white; padding: 8px 15px; border-radius: 50px; font-size: 0.9em; box-shadow: 0 2px 5px rgba(0,0,0,0.3); cursor: default; font-weight: bold; }
         .online-list {
-            visibility: hidden;
-            opacity: 0;
-            position: absolute;
-            bottom: 45px;
-            left: 0;
-            background-color: white;
-            color: #333;
-            min-width: 150px;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-            border: 1px solid #ddd;
-            transition: opacity 0.2s;
-            text-align: right;
-            font-size: 0.85em;
+            visibility: hidden; opacity: 0; position: absolute; bottom: 45px; left: 0;
+            background-color: white; color: #333; min-width: 150px; padding: 10px;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid #eee;
+            transition: all 0.2s ease-in-out; text-align: right; font-size: 0.85em;
         }
-        .online-container:hover .online-list {
-            visibility: visible;
-            opacity: 1;
-        }
+        .online-container:hover .online-list { visibility: visible; opacity: 1; bottom: 50px; }
 
-        /* --- רספונסיביות --- */
+        /* רספונסיביות */
         .desktop-view { display: block; }
         .mobile-view { display: none; }
-        
         @media only screen and (max-width: 768px) {
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
-            .block-container { padding: 1rem !important; }
+            .block-container { padding-top: 1rem !important; }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -250,7 +161,7 @@ def get_online_users_count_and_names():
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס בגיליון ---
+# --- פעולות בסיס ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -279,20 +190,17 @@ def update_settings_list(column_name, new_list):
     sheet = client.open(SHEET_NAME).worksheet("settings")
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
-    
     other_col = 'payment_terms' if column_name == 'fields' else 'fields'
     other_list = [x for x in df[other_col].tolist() if x] if not df.empty and other_col in df.columns else []
-    
     max_len = max(len(new_list), len(other_list))
     new_list += [''] * (max_len - len(new_list))
     other_list += [''] * (max_len - len(other_list))
-    
     new_df = pd.DataFrame({column_name: new_list, other_col: other_list})
     sheet.clear()
     sheet.update([new_df.columns.values.tolist()] + new_df.values.tolist())
 
 # --- מחיקה מרובה ---
-@st.dialog("אישור מחיקה")
+@st.dialog("אישור מחיקה מרובה")
 def confirm_bulk_delete(suppliers_to_delete):
     st.write(f"האם למחוק **{len(suppliers_to_delete)}** ספקים?")
     col1, col2 = st.columns(2)
@@ -309,32 +217,30 @@ def confirm_bulk_delete(suppliers_to_delete):
         else: st.error("שגיאה")
     if col2.button("ביטול"): st.rerun()
 
-# --- תצוגת טבלה למנהל ---
+# --- טבלת מנהל (Data Editor) ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
-    col_search, col_filter = st.columns([2, 1])
-    with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
-    with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
+    c_search, c_filter = st.columns([2, 1])
+    with c_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
+    with c_filter: cat = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
     if not df.empty:
-        if selected_category != "הכל":
-            df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
-        if search:
-            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
+        if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סדר העמודות המבוקש (שם ראשון, מחיקה אחרון)
-        desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
-        final_cols = [c for c in desired_cols if c in df.columns]
-        df_display = df[final_cols].copy()
+        # סידור עמודות: שם מימין (ראשון), מחיקה משמאל (אחרון)
+        cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
+        final_cols = [c for c in cols_order if c in df.columns]
+        df_disp = df[final_cols].copy()
         
-        # הוספת צ'קבוקס בסוף (ב-RTL סוף זה שמאל)
-        df_display["מחיקה?"] = False
+        # הוספת עמודת המחיקה בסוף
+        df_disp["מחיקה?"] = False
 
-        st.write("סמן למחיקה:")
+        st.write("סמן בתיבה את הספקים למחיקה:")
         
         edited_df = st.data_editor(
-            df_display,
+            df_disp,
             column_config={
-                "מחיקה?": st.column_config.CheckboxColumn("מחק", width="small", default=False),
+                "מחיקה?": st.column_config.CheckboxColumn("מחק", default=False, width="small"),
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -348,47 +254,41 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             use_container_width=True
         )
 
-        selected_rows = edited_df[edited_df["מחיקה?"] == True]
-        if not selected_rows.empty:
-            st.warning(f"נבחרו {len(selected_rows)} למחיקה.")
+        sel = edited_df[edited_df["מחיקה?"] == True]
+        if not sel.empty:
+            st.warning(f"נבחרו {len(sel)} למחיקה.")
             if st.button("🗑️ מחק מסומנים", type="primary"):
-                confirm_bulk_delete(selected_rows["שם הספק"].tolist())
-    else:
-        st.info("אין נתונים.")
+                confirm_bulk_delete(sel["שם הספק"].tolist())
+    else: st.info("אין נתונים")
 
-# --- תצוגת טבלה למשתמש (HTML מתוקן!) ---
+# --- טבלת משתמש (HTML נקי) ---
 def show_suppliers_table(df, all_fields_list):
-    col_search, col_filter = st.columns([2, 1])
-    with col_search: search = st.text_input("🔍 חיפוש חופשי", "")
-    with col_filter: selected_category = st.selectbox("📂 סינון", ["הכל"] + all_fields_list)
+    c_search, c_filter = st.columns([2, 1])
+    with c_search: search = st.text_input("🔍 חיפוש חופשי", "")
+    with c_filter: cat = st.selectbox("📂 סינון", ["הכל"] + all_fields_list)
 
     if not df.empty:
-        if selected_category != "הכל":
-            df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
-        if search:
-            df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
+        if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         df_final = df[[c for c in cols if c in df.columns]]
         
-        # HTML מחשב - ללא רווחים מיותרים כדי למנוע באג תצוגה
-        table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False)
-        table_html = table_html.replace('\n', '') 
+        # בניית HTML למחשב - ללא ירידות שורה!
+        table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
         
-        # HTML טלפון
+        # בניית HTML לטלפון
         cards_html = ""
         for _, row in df.iterrows():
-            # בניית הכרטיס כמחרוזת אחת ארוכה
+            # שורה אחת ארוכה למניעת באג תצוגה
             cards_html += f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>"""
 
-        # הזרקה נקייה
         st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html}</div>', unsafe_allow_html=True)
-    else:
-        st.info("אין נתונים.")
+    else: st.info("אין נתונים")
 
 # --- דף כניסה ---
 def login_page():
-    c1, c2, c3 = st.columns([1, 1.5, 1]) # מרכוז
+    c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.title("🔐 כניסה למערכת")
         with st.expander("כלי למנהל (הצפנה)"):
@@ -474,7 +374,7 @@ def main_app():
         df_pend_supp, _ = get_worksheet_data("pending_suppliers")
         c_supp = len(df_pend_supp) if not df_pend_supp.empty else 0
 
-        tabs = st.tabs(["📋 ספקים", f"⏳ ספקים ({c_supp})", f"👥 משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
+        tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({c_supp})", f"👥 אישור משתמשים ({c_users})", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא"])
         
         with tabs[0]: show_admin_table_with_checkboxes(df_suppliers, fields_list)
         
@@ -602,18 +502,18 @@ def main_app():
                                 st.success("נשלח!")
                     else: st.error("חסרים פרטים")
 
-    count_online, names_online = get_online_users_count_and_names()
-    names_html = "<br>".join(names_online) if names_online else "אין אחרים"
+    cnt, names = get_online_users_count_and_names()
+    names_html = "<br>".join(names) if names else "אין"
     
-    # Tooltip למנהל בלבד
-    tooltip_html = ""
+    # טולטיפ משתמשים
+    tooltip = ""
     if user_role == 'admin':
-        tooltip_html = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
+        tooltip = f'<div class="online-list"><strong>מחוברים:</strong><br>{names_html}</div>'
 
     st.markdown(f"""
     <div class="online-container">
-        {tooltip_html}
-        <div class="online-badge">🟢 מחוברים: {count_online}</div>
+        {tooltip}
+        <div class="online-badge">🟢 מחוברים: {cnt}</div>
     </div>
     """, unsafe_allow_html=True)
 
