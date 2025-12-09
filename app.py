@@ -7,6 +7,9 @@ import time
 import bcrypt
 import re
 
+# --- הגדרת עמוד רחב (חובה בהתחלה) ---
+st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="expanded")
+
 # --- הגדרות ---
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 SHEET_NAME = "ניהול ספקים"
@@ -45,14 +48,42 @@ def check_duplicate_supplier(df, name, phone, email):
 def set_css():
     st.markdown("""
     <style>
+        /* כיוון כללי */
         .stApp { direction: rtl; text-align: right; }
         
-        /* יישור כללי לימין */
+        /* הרחבת הקונטיינר הראשי */
+        .block-container {
+            max-width: 100%;
+            padding-top: 2rem;
+            padding-right: 2rem;
+            padding-left: 2rem;
+            padding-bottom: 2rem;
+        }
+
+        /* יישור אלמנטים כללי */
         h1, h2, h3, h4, h5, h6, p, div, span, label, .stMarkdown, .stButton, .stAlert, .stSelectbox, .stMultiSelect { text-align: right !important; }
         .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input { direction: rtl; text-align: right; }
         .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; justify-content: flex-end; }
         
-        /* טבלה רגילה למשתמש */
+        /* ---- תיקון ספציפי לטבלה של המנהל (st.data_editor) ---- */
+        [data-testid="stDataEditor"] {
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        /* יישור הכותרות בטבלה */
+        [data-testid="stDataEditor"] div[role="columnheader"] {
+            direction: rtl !important;
+            text-align: right !important;
+            justify-content: flex-start !important; /* מצמיד לימין */
+        }
+        /* יישור התאים בטבלה */
+        [data-testid="stDataEditor"] div[role="gridcell"] {
+            direction: rtl !important;
+            text-align: right !important;
+            justify-content: flex-end !important;
+        }
+        
+        /* טבלה רגילה (HTML) למשתמש */
         .rtl-table { width: 100%; border-collapse: collapse; direction: rtl; margin-top: 10px; }
         .rtl-table th { background-color: #f0f2f6; text-align: right !important; padding: 10px; border-bottom: 2px solid #ddd; color: #333; font-weight: bold; white-space: nowrap; }
         .rtl-table td { text-align: right !important; padding: 10px; border-bottom: 1px solid #eee; color: #333; }
@@ -71,11 +102,16 @@ def set_css():
         /* הגדרות רספונסיביות */
         .desktop-view { display: block; }
         .mobile-view { display: none; }
+        
         @media only screen and (max-width: 768px) {
             .desktop-view { display: none; }
             .mobile-view { display: block; }
             [data-testid="stSidebar"] { display: none !important; }
-            .block-container { padding-top: 1rem !important; }
+            .block-container { 
+                padding-top: 1rem !important; 
+                padding-left: 0.5rem !important;
+                padding-right: 0.5rem !important;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
@@ -131,7 +167,7 @@ def get_online_users_count_and_names():
         return len(active_names), active_names
     except: return 0, []
 
-# --- פעולות בסיס בגיליון ---
+# --- פעולות בסיס ---
 def add_row_to_sheet(worksheet_name, row_data):
     client = get_client()
     sheet = client.open(SHEET_NAME).worksheet(worksheet_name)
@@ -147,7 +183,7 @@ def delete_row_from_sheet(worksheet_name, key_col, key_val):
             return True
     return False
 
-# --- הגדרות (רשימות) ---
+# --- הגדרות ---
 def get_settings_lists():
     df, _ = get_worksheet_data("settings")
     if df.empty: return [], []
@@ -184,7 +220,6 @@ def confirm_bulk_delete(suppliers_to_delete):
         deleted_count = 0
         
         for i, supplier_name in enumerate(suppliers_to_delete):
-            # מחיקה מהגיליון אחד אחד
             if delete_row_from_sheet("suppliers", "שם הספק", supplier_name):
                 deleted_count += 1
             progress_bar.progress((i + 1) / len(suppliers_to_delete))
@@ -194,45 +229,42 @@ def confirm_bulk_delete(suppliers_to_delete):
             time.sleep(1)
             st.rerun()
         else:
-            st.error("לא הצלחנו למחוק את הספקים. ייתכן שהם כבר נמחקו.")
+            st.error("לא הצלחנו למחוק. ייתכן שהם כבר נמחקו.")
             
     if col2.button("ביטול"):
         st.rerun()
 
 # --- תצוגת טבלה למנהל (עם צ'קבוקסים) ---
 def show_admin_table_with_checkboxes(df, all_fields_list):
-    # אזור סינון וחיפוש
     col_search, col_filter = st.columns([2, 1])
     with col_search: search = st.text_input("🔍 חיפוש (מנהל)", "")
     with col_filter: selected_category = st.selectbox("📂 סינון (מנהל)", ["הכל"] + all_fields_list)
 
     if not df.empty:
-        # לוגיקת סינון
         if selected_category != "הכל":
             df = df[df['תחום עיסוק'].astype(str).str.contains(selected_category, na=False)]
         if search:
             df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
         
-        # סידור עמודות
         desired_cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
         existing_cols = [c for c in desired_cols if c in df.columns]
         df_display = df[existing_cols].copy()
         
-        # הוספת עמודת בחירה
-        df_display.insert(0, "סמן למחיקה", False)
+        # מוסיף את הצ'קבוקס כעמודה אחרונה כדי שבימין-לשמאל תופיע ראשונה מימין
+        # ב Streamlit RTL הטבלה מתהפכת, אז העמודה הראשונה בקוד היא הראשונה מימין
+        df_display.insert(0, "מחיקה", False)
 
-        st.write("סמן בתיבה מימין את הספקים שברצונך למחוק:")
+        st.write("סמן בתיבה את הספקים למחיקה:")
         
-        # שימוש ב-Data Editor לטבלה יפה עם צ'קבוקסים
         edited_df = st.data_editor(
             df_display,
             column_config={
-                "סמן למחיקה": st.column_config.CheckboxColumn(
-                    "מחיקה?",
-                    help="סמן כדי למחוק ספק זה",
+                "מחיקה": st.column_config.CheckboxColumn(
+                    "מחק?",
+                    help="סמן למחיקה",
                     default=False,
+                    width="small"
                 ),
-                # הופכים את שאר העמודות לקריאה בלבד כדי למנוע טעויות
                 "שם הספק": st.column_config.TextColumn(disabled=True),
                 "תחום עיסוק": st.column_config.TextColumn(disabled=True),
                 "טלפון": st.column_config.TextColumn(disabled=True),
@@ -246,14 +278,12 @@ def show_admin_table_with_checkboxes(df, all_fields_list):
             use_container_width=True
         )
 
-        # בדיקה מי סומן
-        selected_rows = edited_df[edited_df["סמן למחיקה"] == True]
+        selected_rows = edited_df[edited_df["מחיקה"] == True]
         
         if not selected_rows.empty:
             st.divider()
             st.warning(f"נבחרו {len(selected_rows)} ספקים למחיקה.")
             if st.button("🗑️ לחץ כאן למחיקת הספקים המסומנים", type="primary"):
-                # שולחים את רשימת השמות למחיקה
                 confirm_bulk_delete(selected_rows["שם הספק"].tolist())
 
     else:
