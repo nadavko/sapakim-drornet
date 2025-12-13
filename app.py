@@ -15,7 +15,6 @@ import logging
 st.set_page_config(page_title="ניהול ספקים", layout="wide", initial_sidebar_state="collapsed")
 
 # --- 2. הגדרות וחיבורים ---
-# הוספנו את ההרשאה ל-Drive
 SCOPE = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
@@ -117,21 +116,17 @@ def upload_file_to_drive(file_obj, filename_prefix):
     """
     מעלה קובץ ל-Google Drive ומחזיר את הקישור אליו.
     """
+    if not file_obj: return ""
     try:
         creds = ServiceAccountCredentials.from_json_keyfile_dict(get_credentials_dict(), SCOPE)
         service = build('drive', 'v3', credentials=creds)
         
-        # שם הקובץ בדרייב
         file_name = f"{filename_prefix}_{file_obj.name}"
+        file_metadata = {'name': file_name}
         
-        file_metadata = {
-            'name': file_name,
-            # אפשר להוסיף כאן 'parents': ['folder_id'] אם רוצים תיקייה ספציפית
-        }
-        
+        file_obj.seek(0)
         media = MediaIoBaseUpload(file_obj, mimetype=file_obj.type)
         
-        # העלאה בפועל
         file = service.files().create(
             body=file_metadata,
             media_body=media,
@@ -162,7 +157,6 @@ def _get_sheet_object(worksheet_name):
     except: return None
 
 def update_active_user(username):
-    # (קוד מקוצר לעדכון זמן חיבור)
     current_time = datetime.now()
     if 'last_api_update' in st.session_state:
         if (current_time - st.session_state['last_api_update']).seconds < 60: return
@@ -300,89 +294,196 @@ def set_css():
 
 # --- 7. ממשקי UI ---
 
-@st.dialog("מחיקה מרובה")
-def confirm_bulk_delete(lst):
-    st.write(f"למחוק {len(lst)} ספקים?"); c1, c2 = st.columns(2)
-    if c1.button("מחק", type="primary"):
+@st.dialog("אישור מחיקה מרובה")
+def confirm_bulk_delete(suppliers_to_delete):
+    st.write(f"האם למחוק **{len(suppliers_to_delete)}** ספקים?")
+    col1, col2 = st.columns(2)
+    if col1.button("כן, מחק", type="primary"):
         prog = st.progress(0)
-        for i, n in enumerate(lst):
-            delete_row_from_sheet("suppliers", "שם הספק", n); prog.progress((i+1)/len(lst))
-        st.success("נמחק!"); time.sleep(1); st.rerun()
-    if c2.button("ביטול"): st.rerun()
+        cnt = 0
+        for i, name in enumerate(suppliers_to_delete):
+            if delete_row_from_sheet("suppliers", "שם הספק", name): cnt += 1
+            prog.progress((i + 1) / len(suppliers_to_delete))
+        if cnt > 0:
+            st.success(f"{cnt} נמחקו!")
+            time.sleep(1)
+            st.rerun()
+        else: st.error("שגיאה")
+    if col2.button("ביטול"): st.rerun()
 
-def show_admin_delete_table(df, fields):
-    c1, c2 = st.columns([2, 1]); s = c1.text_input("🔍 מחיקה", ""); c = c2.selectbox("📂 מחיקה", ["הכל"]+fields)
+def show_admin_delete_table(df, all_fields_list):
+    c_search, c_filter = st.columns([2, 1])
+    with c_search: search = st.text_input("🔍 חיפוש למחיקה", "")
+    with c_filter: cat = st.selectbox("📂 סינון למחיקה", ["הכל"] + all_fields_list)
+
     if not df.empty:
-        if c != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(c, na=False)]
-        if s: df = df[df['שם הספק'].astype(str).str.contains(s, case=False, na=False) | df['טלפון'].astype(str).str.contains(s, case=False, na=False)]
-        cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
-        df_d = df[[col for col in cols if col in df.columns]].copy(); df_d["מחיקה?"] = False
-        st.warning("⚠️ סמן למחיקה:")
-        ed = st.data_editor(df_d, column_config={"מחיקה?": st.column_config.CheckboxColumn("מחק", default=False, width="small"), "שם הספק": st.column_config.TextColumn(disabled=True)}, hide_index=True, use_container_width=True)
-        sel = ed[ed["מחיקה?"] == True]
-        if not sel.empty: 
-            if st.button(f"🗑️ מחק {len(sel)}", type="primary"): confirm_bulk_delete(sel["שם הספק"].tolist())
+        if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
+        if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        
+        cols_order = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
+        final_cols = [c for c in cols_order if c in df.columns]
+        df_disp = df[final_cols].copy()
+        
+        df_disp["מחיקה?"] = False
+
+        st.warning("⚠️ סמן ספקים למחיקה בתיבה משמאל:")
+        edited_df = st.data_editor(
+            df_disp,
+            column_config={
+                "מחיקה?": st.column_config.CheckboxColumn("מחק", default=False, width="small"),
+                "שם הספק": st.column_config.TextColumn(disabled=True),
+                "תחום עיסוק": st.column_config.TextColumn(disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        sel = edited_df[edited_df["מחיקה?"] == True]
+        if not sel.empty:
+            if st.button(f"🗑️ מחק {len(sel)} ספקים מסומנים", type="primary"):
+                confirm_bulk_delete(sel["שם הספק"].tolist())
     else: st.info("אין נתונים")
 
-def show_suppliers_table_readonly(df, fields):
-    c1, c2 = st.columns([2, 1]); s = c1.text_input("🔍 חיפוש", ""); c = c2.selectbox("📂 סינון", ["הכל"]+fields)
+def show_file_links(row):
+    """פונקציית עזר להצגת קישורים"""
+    files_cols = {
+        '📄 הסכם חתום': 'link_agreement', 
+        '🏦 אישור בנק': 'link_bank', 
+        '⚖️ אישור מס וספרים': 'link_tax_books', 
+        '🧾 חשבונית': 'link_invoice'
+    }
+    found = False
+    st.markdown("##### מסמכים מצורפים:")
+    cols = st.columns(len(files_cols))
+    for i, (label, col_name) in enumerate(files_cols.items()):
+        if col_name in row and str(row[col_name]).startswith('http'):
+            cols[i].markdown(f"[{label}]({row[col_name]})", unsafe_allow_html=True)
+            found = True
+    if not found:
+        st.write("אין מסמכים מצורפים.")
+
+def show_suppliers_table_readonly(df, all_fields_list, is_admin=False):
+    # תצוגה מיוחדת למנהל: חיפוש ופתיחת כרטיס ספק
+    if is_admin:
+        st.subheader("🔍 איתור וצפייה בפרטי ספק")
+        
+        # יצירת רשימה לחיפוש
+        supplier_names = df['שם הספק'].unique().tolist()
+        selected_supplier = st.selectbox("בחר ספק לצפייה בפרטים מלאים ומסמכים:", [""] + supplier_names)
+        
+        if selected_supplier:
+            # שליפת השורה הרלוונטית
+            row = df[df['שם הספק'] == selected_supplier].iloc[0]
+            
+            with st.container(border=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.write(f"**שם הספק:** {row['שם הספק']}")
+                    st.write(f"**תחום:** {row['תחום עיסוק']}")
+                    st.write(f"**טלפון:** {row['טלפון']}")
+                    st.write(f"**אימייל:** {row.get('אימייל', '')}")
+                with c2:
+                    st.write(f"**איש קשר:** {row.get('שם איש קשר', '')}")
+                    st.write(f"**כתובת:** {row['כתובת']}")
+                    st.write(f"**תנאי תשלום:** {row['תנאי תשלום']}")
+                    st.write(f"**נוסף ע\"י:** {row.get('נוסף על ידי', '')}")
+                
+                st.divider()
+                show_file_links(row)
+        
+        st.divider()
+        st.subheader("📋 כל הספקים")
+
+    # הטבלה הרגילה (לכולם)
+    c_search, c_filter = st.columns([2, 1])
+    with c_search: search = st.text_input("🔍 חיפוש חופשי בטבלה", "")
+    with c_filter: cat = st.selectbox("📂 סינון", ["הכל"] + all_fields_list)
+
     if not df.empty:
-        if c != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(c, na=False)]
-        if s: df = df[df['שם הספק'].astype(str).str.contains(s, case=False, na=False) | df['טלפון'].astype(str).str.contains(s, case=False, na=False)]
+        if cat != "הכל": df = df[df['תחום עיסוק'].astype(str).str.contains(cat, na=False)]
+        if search: df = df[df['שם הספק'].astype(str).str.contains(search, case=False, na=False) | df['טלפון'].astype(str).str.contains(search, case=False, na=False)]
+        
         cols = ['שם הספק', 'תחום עיסוק', 'טלפון', 'אימייל', 'כתובת', 'שם איש קשר', 'תנאי תשלום', 'נוסף על ידי']
-        df_f = df[[col for col in cols if col in df.columns]]
-        html = df_f.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
-        cards = "".join([f"""<div class="mobile-card"><details><summary><span>{r['שם הספק']} | {r['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{r['טלפון']}">{r['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{r.get('אימייל','')}">{r.get('אימייל','')}</a></div><div><strong>📍:</strong> {r['כתובת']}</div><div><strong>👤:</strong> {r.get('שם איש קשר','')}</div><div><strong>💳:</strong> {r.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {r.get('נוסף על ידי','')}</div></div></details></div>""" for _, r in df.iterrows()])
-        st.markdown(f'<div class="desktop-view">{html}</div><div class="mobile-view">{cards}</div>', unsafe_allow_html=True)
+        df_final = df[[c for c in cols if c in df.columns]]
+        
+        table_html = df_final.to_html(index=False, classes='rtl-table', border=0, escape=False).replace('\n', '')
+        
+        cards_html_list = []
+        for _, row in df.iterrows():
+            cards_html_list.append(f"""<div class="mobile-card"><details><summary><span>{row['שם הספק']} | {row['תחום עיסוק']}</span></summary><div class="card-content"><div><strong>📞:</strong> <a href="tel:{row['טלפון']}">{row['טלפון']}</a></div><div><strong>✉️:</strong> <a href="mailto:{row.get('אימייל','')}">{row.get('אימייל','')}</a></div><div><strong>📍:</strong> {row['כתובת']}</div><div><strong>👤:</strong> {row.get('שם איש קשר','')}</div><div><strong>💳:</strong> {row.get('תנאי תשלום','')}</div><div style="font-size:0.8em;color:#888;margin-top:5px">נוסף ע"י: {row.get('נוסף על ידי','')}</div></div></details></div>""")
+        cards_html_full = "".join(cards_html_list)
+
+        st.markdown(f'<div class="desktop-view">{table_html}</div><div class="mobile-view">{cards_html_full}</div>', unsafe_allow_html=True)
     else: st.info("אין נתונים")
 
+# --- 8. ממשק ניהול משתמשים (מנהל) ---
 def show_user_management():
-    df_users = get_worksheet_data("users"); df_pend = get_worksheet_data("pending_users")
-    cnt = len(df_pend) if not df_pend.empty else 0
-    tabs = st.tabs([f"⏳ אישור ({cnt})", "👥 משתמשים", "➕ יצירה"])
+    df_users = get_worksheet_data("users")
+    df_pending = get_worksheet_data("pending_users")
+    count_pending = len(df_pending) if not df_pending.empty else 0
+    
+    tabs = st.tabs([f"⏳ אישור ממתינים ({count_pending})", "👥 כל המשתמשים", "➕ יצירת משתמש"])
+    
     with tabs[0]:
-        if not df_pend.empty:
-            for i, r in df_pend.iterrows():
-                with st.expander(f"{r['name']} ({r['username']})"):
+        if not df_pending.empty:
+            for idx, row in df_pending.iterrows():
+                with st.expander(f"{row['name']} ({row['username']})"):
+                    st.write(f"בקשה: {row.get('date', 'N/A')}")
                     c1, c2 = st.columns(2)
-                    if c1.button("אשר", key=f"ua{i}"):
-                        if add_row_to_sheet("users", [r['username'], r['password'], 'user', r['name']]):
-                            delete_row_from_sheet("pending_users", "username", r['username']); st.success("אושר"); st.rerun()
-                    if c2.button("דחה", key=f"ur{i}"):
-                        delete_row_from_sheet("pending_users", "username", r['username']); st.rerun()
-        else: st.info("אין ממתינים")
+                    if c1.button("אשר", key=f"app_u_{idx}"):
+                        if add_row_to_sheet("users", [row['username'], row['password'], 'user', row['name']]):
+                            delete_row_from_sheet("pending_users", "username", row['username'])
+                            st.success("אושר!")
+                            time.sleep(0.5); st.rerun()
+                    if c2.button("דחה", key=f"rej_u_{idx}"):
+                        delete_row_from_sheet("pending_users", "username", row['username'])
+                        st.rerun()
+        else: st.info("אין ממתינים.")
+
     with tabs[1]:
         if not df_users.empty:
             st.dataframe(df_users[['name', 'username', 'role']], use_container_width=True)
-            u = st.selectbox("ערוך משתמש", df_users['username'].unique())
-            if u:
-                ud = df_users[df_users['username']==u].iloc[0]
-                with st.form("ed_u"):
-                    nn = st.text_input("שם", ud['name']); nr = st.selectbox("תפקיד", ["user", "admin"], 0 if ud['role']=='user' else 1)
-                    np = st.text_input("סיסמה חדשה (אופציונלי)", type="password")
-                    if st.form_submit_button("שמור"):
-                        if update_user_details(u, u, nn, nr, np if np else None): st.success("עודכן"); time.sleep(1); st.rerun()
-                if u != st.session_state.get('username') and st.button("מחק משתמש"):
-                    if delete_row_from_sheet("users", "username", u): st.success("נמחק"); st.rerun()
-        else: st.info("אין משתמשים")
-    with tabs[2]:
-        with st.form("new_u"):
-            ne = st.text_input("אימייל").lower().strip()
-            nn = st.text_input("שם")
-            nr = st.selectbox("תפקיד", ["user", "admin"])
-            np = st.text_input("סיסמה", type="password")
-            if st.form_submit_button("צור"):
-                if ne and nn and np:
-                    h = hash_password(np)
-                    if h and add_row_to_sheet("users", [ne, h, nr, nn]): st.success("נוצר"); st.rerun()
-                else: st.error("חסר מידע")
+            st.divider()
+            st.subheader("עריכת משתמש קיים")
+            user_to_edit = st.selectbox("בחר משתמש:", df_users['username'].unique())
+            if user_to_edit:
+                user_data = df_users[df_users['username'] == user_to_edit].iloc[0]
+                with st.form("edit_u"):
+                    nn = st.text_input("שם", user_data['name'])
+                    nr = st.selectbox("הרשאה", ["user", "admin"], index=0 if user_data['role']=='user' else 1)
+                    np = st.text_input("סיסמה חדשה (השאר ריק אם אין שינוי)", type="password")
+                    if st.form_submit_button("שמור שינויים"):
+                        if update_user_details(user_to_edit, user_to_edit, nn, nr, np if np else None):
+                            st.success("עודכן!"); time.sleep(1); st.rerun()
+                if user_to_edit != st.session_state.get('username'):
+                    if st.button("מחק משתמש 🗑️"):
+                        if delete_row_from_sheet("users", "username", user_to_edit):
+                            st.success("נמחק!"); time.sleep(1); st.rerun()
+        else: st.info("אין משתמשים.")
 
-# --- 8. מסך כניסה ---
+    with tabs[2]:
+        st.subheader("יצירת משתמש ידנית")
+        with st.form("create_u"):
+            ne = st.text_input("אימייל").lower().strip()
+            nn = st.text_input("שם מלא")
+            nr = st.selectbox("הרשאה", ["user", "admin"])
+            np = st.text_input("סיסמה", type="password")
+            if st.form_submit_button("צור משתמש"):
+                if ne and nn and np:
+                    if not df_users.empty and ne in df_users['username'].astype(str).str.lower().str.strip().values:
+                        st.error("קיים")
+                    else:
+                        h = hash_password(np)
+                        if h:
+                            if add_row_to_sheet("users", [ne, h, nr, nn]):
+                                st.success("נוצר!"); time.sleep(1); st.rerun()
+                else: st.error("כל השדות חובה")
+
+# --- 9. דף כניסה רגיל ---
 def login_page():
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.title("🔐 כניסה למערכת")
-        with st.expander("כלי להצפנת סיסמה"):
+        with st.expander("כלי למנהל (הצפנה)"):
             p = st.text_input("סיסמה להצפנה")
             if st.button("הצפן"): 
                 h = hash_password(p)
@@ -406,8 +507,7 @@ def login_page():
                             st.session_state['role'] = rec.iloc[0]['role']
                             update_active_user(user)
                             st.success("מחובר!")
-                            time.sleep(0.5)
-                            st.rerun()
+                            time.sleep(0.5); st.rerun()
                         else: st.error("פרטים שגויים")
                     else: st.error("שגיאה בטעינת נתונים")
 
@@ -423,8 +523,8 @@ def login_page():
                         df_u = get_worksheet_data("users")
                         df_p = get_worksheet_data("pending_users")
                         exists = False
-                        if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists=True
-                        if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists=True
+                        if not df_u.empty and new_email in df_u['username'].astype(str).str.lower().str.strip().values: exists = True
+                        if not df_p.empty and new_email in df_p['username'].astype(str).str.lower().str.strip().values: exists = True
                         
                         if exists: st.error("משתמש קיים")
                         else:
@@ -433,7 +533,7 @@ def login_page():
                                 add_row_to_sheet("pending_users", [new_email, hashed, fname, str(datetime.now())])
                                 st.success("נשלח לאישור")
 
-# --- 9. אפליקציה ראשית ---
+# --- 10. ראשי ---
 def main_app():
     user_role = st.session_state.get('role', 'user')
     user_name = st.session_state.get('name', 'User')
@@ -450,13 +550,13 @@ def main_app():
 
     with st.expander("📬 ההגשות שלי"):
         df_rej = get_worksheet_data("rejected_suppliers")
+        my_rej = pd.DataFrame() 
         if not df_rej.empty:
             mask = df_rej['נוסף על ידי'].astype(str).str.contains(user_name, na=False) | df_rej['נוסף על ידי'].astype(str).str.contains(current_email, na=False)
             my_rej = df_rej[mask]
-            if not my_rej.empty:
-                st.error(f"נדחו: {len(my_rej)}")
-                st.dataframe(my_rej[['שם הספק', 'תאריך דחייה']], use_container_width=True)
-            else: st.info("אין הודעות")
+        if not my_rej.empty:
+            st.error(f"יש {len(my_rej)} ספקים שנדחו.")
+            st.dataframe(my_rej[['שם הספק', 'תאריך דחייה']], use_container_width=True)
         else: st.info("אין הודעות")
 
     st.markdown("---")
@@ -468,36 +568,46 @@ def main_app():
         # טאבים מעודכנים
         tabs = st.tabs(["📋 רשימת ספקים", f"⏳ אישור ספקים ({cnt_s})", f"👥 ניהול משתמשים", "➕ הוספה", "⚙️ הגדרות", "📥 יבוא", "🗑️ מחיקת ספקים"])
         
-        with tabs[0]: show_suppliers_table_readonly(df_supp, fields)
+        # טאב צפייה עם יכולת פתיחת כרטיס
+        with tabs[0]: 
+            show_suppliers_table_readonly(df_supp, fields, is_admin=True)
         
         with tabs[1]:
             if cnt_s > 0:
                 for idx, row in df_pend_supp.iterrows():
                     with st.expander(f"{row['שם הספק']}"):
-                        st.write(f"תחום: {row['תחום עיסוק']} | טלפון: {row['טלפון']}")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.write(f"**תחום:** {row['תחום עיסוק']}")
+                            st.write(f"**טלפון:** {row['טלפון']}")
+                            st.write(f"**אימייל:** {row.get('אימייל', '')}")
+                        with c2:
+                            st.write(f"**כתובת:** {row['כתובת']}")
+                            st.write(f"**איש קשר:** {row.get('שם איש קשר', '')}")
+                            st.write(f"**תנאי תשלום:** {row['תנאי תשלום']}")
                         
-                        # הצגת קישורים לקבצים שהועלו (אם יש)
-                        files_cols = {'הסכם': 'link_agreement', 'בנק': 'link_bank', 'מס': 'link_tax', 'ספרים': 'link_books', 'חשבונית': 'link_invoice'}
-                        for label, col_name in files_cols.items():
-                            if col_name in row and str(row[col_name]).startswith('http'):
-                                st.markdown(f"📄 [{label}]({row[col_name]})")
+                        st.divider()
+                        # תצוגת מסמכים לאישור
+                        show_file_links(row)
+                        st.divider()
 
                         is_dup, msg = check_duplicate_supplier(df_supp, row['שם הספק'], row['טלפון'], row.get('אימייל',''))
                         if is_dup: st.warning(msg)
-                        c1, c2 = st.columns(2)
+                        
+                        btn_c1, btn_c2 = st.columns(2)
                         
                         # הכנת שורה לאישור (כולל קבצים)
                         row_to_add = [row['שם הספק'], row['תחום עיסוק'], row['טלפון'], row['כתובת'], row['תנאי תשלום'], row.get('אימייל',''), row.get('שם איש קשר',''), row['נוסף על ידי']]
-                        # הוספת עמודות קבצים אם קיימות
-                        extra_cols = ['link_agreement', 'link_bank', 'link_tax', 'link_books', 'link_invoice']
+                        # הוספת עמודות קבצים (5 קישורים)
+                        extra_cols = ['link_agreement', 'link_bank', 'link_tax_books', 'link_tax_books', 'link_invoice']
                         for ec in extra_cols:
                             row_to_add.append(row.get(ec, ''))
 
-                        if c1.button("אשר", key=f"s_ok_{idx}"):
+                        if btn_c1.button("אשר ספק ✅", key=f"s_ok_{idx}"):
                             add_row_to_sheet("suppliers", row_to_add)
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
                             st.rerun()
-                        if c2.button("דחה", key=f"s_no_{idx}"):
+                        if btn_c2.button("דחה ספק ❌", key=f"s_no_{idx}"):
                             rej = row.values.tolist(); rej.append(str(datetime.now()))
                             add_row_to_sheet("rejected_suppliers", rej)
                             delete_row_from_sheet("pending_suppliers", "שם הספק", row['שם הספק'])
@@ -518,25 +628,26 @@ def main_app():
                 s_pay = st.selectbox("תנאי *", terms)
                 
                 st.markdown("---")
-                st.write("📂 העלאת מסמכים (PDF/תמונה בלבד, חובה):")
+                st.write("📂 העלאת מסמכים (חובה):")
                 f1 = st.file_uploader("הסכם חתום *", type=['pdf','png','jpg','jpeg'])
                 f2 = st.file_uploader("אישור ניהול חשבון *", type=['pdf','png','jpg','jpeg'])
-                f3 = st.file_uploader("פטור ניכוי מס *", type=['pdf','png','jpg','jpeg'])
-                f4 = st.file_uploader("אישור ניהול ספרים *", type=['pdf','png','jpg','jpeg'])
+                f3_combined = st.file_uploader("אישור ניכוי מס וניהול ספרים *", type=['pdf','png','jpg','jpeg'])
                 f5 = st.file_uploader("דוגמת חשבונית *", type=['pdf','png','jpg','jpeg'])
                 
                 if st.form_submit_button("שמור"):
-                    files_map = {'agreement': f1, 'bank': f2, 'tax': f3, 'books': f4, 'invoice': f5}
+                    files_map = {'agreement': f1, 'bank': f2, 'tax_books': f3_combined, 'invoice': f5}
                     valid, msg = validate_supplier_form(df_supp, s_name, s_f, s_p, s_e, s_a, s_pay, files_map)
                     
                     if valid:
                         with st.spinner("מעלה קבצים..."):
-                            links = []
-                            for k, v in files_map.items():
-                                link = upload_file_to_drive(v, s_name)
-                                links.append(link if link else "")
+                            l_ag = upload_file_to_drive(f1, s_name + "_agree")
+                            l_bk = upload_file_to_drive(f2, s_name + "_bank")
+                            l_tb = upload_file_to_drive(f3_combined, s_name + "_taxbooks")
+                            l_in = upload_file_to_drive(f5, s_name + "_inv")
                             
-                            row_data = [s_name, ", ".join(s_f), s_p, s_a, s_pay, s_e, s_c, user_name] + links
+                            links_part = [l_ag, l_bk, l_tb, l_tb, l_in]
+                            
+                            row_data = [s_name, ", ".join(s_f), s_p, s_a, s_pay, s_e, s_c, user_name] + links_part
                             add_row_to_sheet("suppliers", row_data)
                             st.success("נוסף בהצלחה!")
                             time.sleep(1); st.rerun()
@@ -595,21 +706,23 @@ def main_app():
                 st.write("📂 העלאת מסמכים (חובה):")
                 f1 = st.file_uploader("הסכם חתום *", type=['pdf','png','jpg','jpeg'])
                 f2 = st.file_uploader("אישור ניהול חשבון *", type=['pdf','png','jpg','jpeg'])
-                f3 = st.file_uploader("פטור ניכוי מס *", type=['pdf','png','jpg','jpeg'])
-                f4 = st.file_uploader("אישור ניהול ספרים *", type=['pdf','png','jpg','jpeg'])
+                f3_combined = st.file_uploader("אישור ניכוי מס וניהול ספרים *", type=['pdf','png','jpg','jpeg'])
                 f5 = st.file_uploader("דוגמת חשבונית *", type=['pdf','png','jpg','jpeg'])
 
                 if st.form_submit_button("שלח"):
-                    files_map = {'agreement': f1, 'bank': f2, 'tax': f3, 'books': f4, 'invoice': f5}
+                    files_map = {'agreement': f1, 'bank': f2, 'tax_books': f3_combined, 'invoice': f5}
                     valid, msg = validate_supplier_form(df_supp, s_name, s_f, s_p, s_e, s_a, s_pay, files_map)
                     if valid:
                         with st.spinner("מעלה קבצים ושולח לאישור..."):
-                            links = []
-                            for k, v in files_map.items():
-                                link = upload_file_to_drive(v, s_name)
-                                links.append(link if link else "")
+                            l_ag = upload_file_to_drive(f1, s_name + "_agree")
+                            l_bk = upload_file_to_drive(f2, s_name + "_bank")
+                            l_tb = upload_file_to_drive(f3_combined, s_name + "_taxbooks")
+                            l_in = upload_file_to_drive(f5, s_name + "_inv")
                             
-                            row_data = [s_name, ", ".join(s_f), s_p, s_a, s_pay, s_e, s_c, user_name, str(datetime.now())] + links
+                            links = [l_ag, l_bk, l_tb, l_tb, l_in]
+                            
+                            row_data = [s_name, ", ".join(s_f), s_p, s_a, s_pay, s_e, s_c, user_name] + links + [str(datetime.now())]
+                            
                             add_row_to_sheet("pending_suppliers", row_data)
                             st.success("נשלח לאישור!")
                     else: st.error(msg)
